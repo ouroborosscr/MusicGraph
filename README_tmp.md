@@ -46,10 +46,7 @@ POST /listen?name=稻香&artist=周杰伦&isFullPlay=true    听歌接口，记�
 POST /newlisten?name=稻香&artist=周杰伦&isFullPlay=true    添加新的歌接口，记录用户听歌行为。只有name必须填，其余都可缺省
 2026.2.4 18:55:
 处理笛卡尔积问题，先查id，防止比对每一个键
-```
-
-开发中：
-```
+2026.2.4 20:25:
 添加查询功能：
 1.使用id查询点
 2.使用name查询点
@@ -68,6 +65,10 @@ POST /newlisten?name=稻香&artist=周杰伦&isFullPlay=true    添加新的歌�
                             GET /api/music/query/edge?id=55&detail=true
 查询边 - 粒度 1 (Basic) 请求: GET /api/music/query/edge?from=七里香&to=江南
 查询边 - 粒度 2 (Detailed) 请求: GET /api/music/query/edge?from=七里香&to=江南&detail=true
+```
+
+开发中：
+```
 ```
 
 待开发：
