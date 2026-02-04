@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+
+import org.springframework.data.neo4j.core.schema.CompositeProperty;
 import org.springframework.data.neo4j.core.schema.GeneratedValue;
 import org.springframework.data.neo4j.core.schema.Id;
 import org.springframework.data.neo4j.core.schema.Node;
@@ -11,7 +13,9 @@ import org.springframework.data.neo4j.core.schema.Relationship;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -32,13 +36,16 @@ public class Song {
     /**
      * 歌曲唯一标识符，由Neo4j自动生成
      */
-    @Id @GeneratedValue // 标记为主键，并使用自动生成策略
+    @Id @GeneratedValue // 标记为主键，并使用自动生成策略：当创建新的 Song 实体并将其保存到 Neo4j 图数据库时，数据库会自动为该实体生成一个唯一的 id 值，而不需要我们在代码中手动指定。
     private Long id;
 
     /**
      * 歌曲名称
      */
     private String name;
+
+    // 【新增】作者名（暂时手动输入）
+    private String artist;
     
     /**
      * 歌曲被播放的时间戳，用于判断是否为"新的一天"
@@ -54,6 +61,19 @@ public class Song {
      * 歌曲在来源平台的外部ID，用于与外部音乐服务进行关联
      */
     private String externalId;
+
+    // 【新增】点属性统计
+    private Integer listenCount = 0;       // 听歌次数
+    private Integer fullPlayCount = 0;     // 完播次数
+    private Integer skipCount = 0;         // 快速跳转次数
+    private Integer userSelectCount = 0;   // 主动选择次数
+    private Integer randomSelectCount = 0; // 被随机选中次数
+
+    // 【新增】动态属性的万能口袋
+    // 数据库里所有未映射的属性，都会自动读写到这个 Map 里
+    // prefix = "" 表示属性名在数据库里不加前缀
+    @CompositeProperty(prefix = "")
+    private Map<String, Object> dynamicProperties = new HashMap<>();
 
     /**
      * 指向后续歌曲的关系列表，形成播放历史链表
@@ -73,10 +93,18 @@ public class Song {
      * 
      * @param name 歌曲名称
      */
-    public Song(String name) {
+    public Song(String name, String artist) {
         this.name = name;
+        this.artist = artist; // 构造函数增加 artist
         this.listenedAt = LocalDateTime.now(); // 自动设置为当前时间
+        // 初始化计数器
+        this.listenCount = 1;
+        this.fullPlayCount = 0; 
+        this.skipCount = 0;
+        this.userSelectCount = 1; // 默认创建时算一次主动选择
+        this.randomSelectCount = 0;
     }
+    
 
     /**
      * 重写toString方法，返回歌曲的字符串表示
