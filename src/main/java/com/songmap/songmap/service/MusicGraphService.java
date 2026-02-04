@@ -10,11 +10,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.Assert; // Spring自带的断言工具，用于参数校验
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Pattern;
+
+
 
 /**
  * 音乐图谱核心服务
@@ -65,46 +66,70 @@ public class MusicGraphService {
         // 1. 处理参数默认值
         if (artist == null || artist.isEmpty()) artist = "Unknown";
         
-        // 2. 获取上一首歌 (逻辑不变，从 Redis 取)
+        // 2. 获取上一首歌
         Long lastSongId = musicHistoryService.getLastListenedSongId();
 
-        // 3. 查找或创建当前歌曲 (注意：现在要匹配 artist 了)
-        Song currentSong = songRepository.findByNameAndArtist(name, artist)
-                .orElse(new Song(name, artist));
-        
-        // 4. 【更新点属性】增加计数器
-        currentSong.setListenedAt(LocalDateTime.now());
-        // Java层自增 (注意判空，防止旧数据为null)
-        currentSong.setListenCount(nullSafeAdd(currentSong.getListenCount(), 1));
-        if (isFullPlay) currentSong.setFullPlayCount(nullSafeAdd(currentSong.getFullPlayCount(), 1));
-        if (isSkip) currentSong.setSkipCount(nullSafeAdd(currentSong.getSkipCount(), 1));
-        
-        if (isRandom) {
-            currentSong.setRandomSelectCount(nullSafeAdd(currentSong.getRandomSelectCount(), 1));
+        // 3. 查找或创建当前歌曲
+        Optional<Song> existingSongOpt = songRepository.findByNameAndArtist(name, artist);
+        Song currentSong;
+
+        if (existingSongOpt.isPresent()) {
+            // === 分支 A: 歌曲已存在 -> 执行 UPDATE ===
+            currentSong = existingSongOpt.get();
+            
+            // 在内存中更新对象属性（为了最后返回给 Controller）
+            currentSong.setListenedAt(LocalDateTime.now());
+            currentSong.setListenCount(nullSafeAdd(currentSong.getListenCount(), 1));
+            if (isFullPlay) currentSong.setFullPlayCount(nullSafeAdd(currentSong.getFullPlayCount(), 1));
+            if (isSkip) currentSong.setSkipCount(nullSafeAdd(currentSong.getSkipCount(), 1));
+            
+            if (isRandom) {
+                currentSong.setRandomSelectCount(nullSafeAdd(currentSong.getRandomSelectCount(), 1));
+            } else {
+                currentSong.setUserSelectCount(nullSafeAdd(currentSong.getUserSelectCount(), 1));
+            }
+
+            // 【关键修复】使用自定义 Cypher 只更新属性，绝不使用 save()，保护现有关系不被删除
+            songRepository.updateSongStats(
+                currentSong.getId(),
+                currentSong.getListenedAt(),
+                currentSong.getListenCount(),
+                currentSong.getFullPlayCount(),
+                currentSong.getSkipCount(),
+                currentSong.getUserSelectCount(),
+                currentSong.getRandomSelectCount()
+            );
+
         } else {
-            currentSong.setUserSelectCount(nullSafeAdd(currentSong.getUserSelectCount(), 1));
+            // === 分支 B: 新歌 -> 执行 SAVE ===
+            currentSong = new Song(name, artist);
+            // 构造函数已经初始化了大部分计数器为 0 或 1，这里根据参数微调
+            if (isFullPlay) currentSong.setFullPlayCount(1);
+            if (isSkip) currentSong.setSkipCount(1);
+            if (isRandom) {
+                currentSong.setRandomSelectCount(1);
+                currentSong.setUserSelectCount(0); // 构造函数默认是1，如果是随机需重置
+            }
+            
+            // 新节点没有任何关系，使用 save() 是安全的
+            currentSong = songRepository.save(currentSong);
         }
 
-        // 保存点 (获取ID)
-        currentSong = songRepository.save(currentSong);
-
-        // 5. 【更新边属性】
+        // 5. 【更新边属性】 (如果是新的一天 forceNewChain=true，则跳过此步，从而实现断连)
         if (lastSongId != null && !forceNewChain) {
-            // 防自环逻辑：如果是同一首歌，只更新 Redis 顺序，不加边
-            // (这里需要查一下 lastSong 的实体来比对名字，为了性能也可以只比对 ID)
+            // 防自环逻辑
             if (!currentSong.getId().equals(lastSongId)) {
-                // 准备边的增量参数
                 int jumpVal = 1;
                 int selectVal = isRandom ? 0 : 1;
                 int randomVal = isRandom ? 1 : 0;
 
-                // 调用 Repository 的神技：createOrUpdateEdge
+                // 使用 MERGE 语句，它是增量的，不会删除其他边
                 songRepository.createOrUpdateEdge(lastSongId, currentSong.getId(), jumpVal, selectVal, randomVal);
             }
         }
 
-        // 6. 更新 Redis 历史 (存 ID::歌名)
-        musicHistoryService.updateHistory(currentSong.getId(), currentSong.getName(), 100); // hardcode limit for now
+        // 6. 更新 Redis 历史
+        musicHistoryService.updateHistory(currentSong.getId(), currentSong.getName(), historyLimit);
         
         return currentSong;
     }

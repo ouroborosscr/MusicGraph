@@ -7,6 +7,7 @@ import org.springframework.data.neo4j.repository.Neo4jRepository;
 import org.springframework.data.neo4j.repository.query.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional; // 别忘了导入这个
 
@@ -68,6 +69,22 @@ public interface SongRepository extends Neo4jRepository<Song, Long>{
     @Query("MATCH (s:Song {name: $fromName})-[r:NEXT]->(t:Song {name: $toName}) " +
            "RETURN r{.*} as edge, s as source, t as target LIMIT 1") // <--- 修改这里
     Optional<EdgeDetailDTO> findEdgeDetailByNames(@Param("fromName") String fromName, @Param("toName") String toName);
+
+    // 【新增关键修复】原子性更新歌曲统计数据，防止 save() 误删关系
+    @Query("MATCH (s:Song) WHERE id(s) = $id " +
+           "SET s.listenedAt = $listenedAt, " +
+           "s.listenCount = $listenCount, " +
+           "s.fullPlayCount = $fullPlayCount, " +
+           "s.skipCount = $skipCount, " +
+           "s.userSelectCount = $userSelectCount, " +
+           "s.randomSelectCount = $randomSelectCount")
+    void updateSongStats(@Param("id") Long id,
+                         @Param("listenedAt") LocalDateTime listenedAt,
+                         @Param("listenCount") Integer listenCount,
+                         @Param("fullPlayCount") Integer fullPlayCount,
+                         @Param("skipCount") Integer skipCount,
+                         @Param("userSelectCount") Integer userSelectCount,
+                         @Param("randomSelectCount") Integer randomSelectCount);
 
     // 【新增】删除两个歌曲之间的 NEXT 关系
     // 逻辑：找到名为 fromName 的节点 a，找到名为 toName 的节点 b，删除它们之间名为 NEXT 的关系 r
