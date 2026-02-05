@@ -1,204 +1,91 @@
-# 🎵 MusicGraph
+# Machine-Learning-Backdoor-Attack-and-Defense-Baseline-Solution-Alignment-Platform
 
-> **基于知识图谱的个性化音乐轨迹记录与推荐系统**
-> *A Knowledge Graph-based Personalized Music Trajectory System*
+## 📖 Introduction
 
-## 📖 项目简介
+This project is a comprehensive benchmark and alignment platform designed to standardize the evaluation of Backdoor Attacks and Defenses in Deep Learning. It aims to bridge the gap between disparate experimental settings, enabling researchers to fairly compare methods and accelerate the reproduction of state-of-the-art (SOTA) results.
 
-**MusicGraph** 是一个探索性的音乐数据系统。不同于传统的基于标签（Tag-based）或协同过滤的推荐系统，MusicGraph 关注用户的**实际听歌轨迹**。
+## 🎯 Motivation
 
-它通过记录用户在歌曲之间的跳转行为（A -> B），在 Neo4j 中构建一个动态生长的**有向加权图谱**。系统不仅记录“你听过什么”，更记录“你在听完 A 之后，潜意识里更倾向于听 B 还是 C”。
+In the process of conducting research and submitting papers, we identified several critical **pain points** regarding the reproduction and comparison of existing backdoor metrics:
 
-结合 **Redis** 的 LRU 缓存机制，本项目实现了一个混合存储架构，既能处理复杂的图谱拓扑查询，又能高效处理高频的历史记录访问。
+**Framework Heterogeneity**: Existing methods often rely on different deep learning frameworks (e.g., PyTorch vs. TensorFlow), making direct integration and comparison difficult.
 
-## 📂 项目结构
+**Misalignment of Models & Datasets**: Reproducing results on "similar" but not identical dataset specifications significantly increases the workload for subsequent researchers and introduces confounding variables.
 
+**Implementation Discrepancies**: Even when using the same model architecture, differences in internal node definitions or layer naming conventions cause significant difficulties in transferability and code reuse.
+
+**Our Solution**: We provide a unified platform with aligned environments, standardized model definitions, and curated datasets to ensure fair and efficient benchmarking.
+
+## 📊 Dataset Selection Strategy
+Our choice of datasets and model structures is guided by three principles:
+
+**Prevalence**: They are frequently used in top-tier academic papers.
+
+**Diversity**: They vary in specifications (channel depth, resolution) to demonstrate the robustness of attacks/defenses across different scenarios.
+
+**Applicability**: They reinforce the "real-world" relevance of the research, which is crucial for paper acceptance.
+
+**Supported Datasets**
+We have selected the following three datasets to cover a wide range of complexities:
+
+| Dataset | Type | Dimensions | Classes | Purpose & Application |
+| :--- | :--- | :--- | :--- | :--- |
+| **MNIST** | Grayscale | `1 x 28 x 28` | 10 | **Rapid Validation.** Ideal for debugging and quick proof-of-concept experiments. |
+| **GTSRB** | Color (RGB) | `3 x 32 x 32` | 43 | **Autonomous Driving.** German Traffic Sign Recognition Benchmark. Adds complexity with color and more classes. |
+| **PUBFIG** | Color (RGB) | `3 x 224 x 224`* | 43 | **Face Recognition.** High-resolution validation adapted for large models (e.g., VGG16). |
+
+* Note: The PUBFIG dataset in this framework is resized to 224x224 to fit standard VGG16 input requirements.
+
+## 🚀 Getting Started
+**Installation**
 ```
-MusicGraph                          // 项目工作空间根目录
-├── .vscode                         // VS Code 配置文件
-├── songmap                         // 核心后端工程 (Spring Boot Module)
-│   ├── .mvn/wrapper                // Maven Wrapper 环境
-│   ├── src
-│   │   ├── main
-│   │   │   ├── java/com/songmap/songmap
-│   │   │   │   ├── controller      // 控制层：API 接口定义 (MusicController)
-│   │   │   │   ├── dto             // 数据传输对象：规范复杂查询返回 (NodeDetailDTO等)
-│   │   │   │   ├── entity          // 实体类：映射 Neo4j 节点与关系 (Song, PlayRecord)
-│   │   │   │   ├── repository      // 仓库层：Neo4j 数据访问接口与自定义 Cypher
-│   │   │   │   ├── service         // 业务层：图谱逻辑、Redis 历史记录管理
-│   │   │   │   └── SongmapApplication.java // Spring Boot 启动入口
-│   │   │   └── resources
-│   │   │       ├── static          // 静态资源文件
-│   │   │       ├── templates       // 前端模板文件
-│   │   │       └── application.properties // 系统配置文件 (数据库/Redis连接)
-│   │   └── test                    // 单元测试目录
-│   ├── target                      // 编译输出目录
-│   ├── .gitignore                  // Git 忽略规则
-│   ├── mvnw / mvnw.cmd             // Maven 跨平台执行脚本
-│   └── pom.xml                     // Maven 依赖与构建配置
-└── README.md                       // 项目说明文档
-
-```
-
-## 🛠️ 技术栈
-
-* **核心框架**: Java 17, Spring Boot 3+
-* **图数据库**: Neo4j (存储节点、关系、动态属性)
-* **缓存中间件**: Redis (存储 LRU 听歌历史)
-* **构建工具**: Maven
-* **数据交互**: Spring Data Neo4j (SDN), Spring Data Redis, Neo4jClient
-
-## 🚀 快速开始
-
-### 1. 环境准备
-
-你需要安装以下服务（推荐使用 Docker）：
-
-```bash
-# 1. 启动 Neo4j
-docker run -d --name neo4j-music \
-  -p 7474:7474 -p 7687:7687 \
-  -e NEO4J_AUTH=neo4j/password \
-  neo4j:latest
-
-# 2. 启动 Redis
-docker run -d --name redis-music \
-  -p 6379:6379 \
-  redis:latest
-
+git clone https://github.com/ouroborosscr/Machine-Learning-Backdoor-Attack-and-Defense-Baseline-Solution-Alignment-Platform.git
 ```
 
-### 2. 配置
-
-修改 `songmap/src/main/resources/application.properties`：
-
-```properties
-spring.neo4j.uri=bolt://localhost:7687
-spring.neo4j.authentication.username=neo4j
-spring.neo4j.authentication.password=password
-
-spring.data.redis.host=localhost
-spring.data.redis.port=6379
-
-# 自定义历史记录长度
-songmap.history.limit=100
-
+## 🧩 Project Structure
+```
+.
+├── Backdoor Attacks/   # Implementation of attack algorithms
+│   └── BadNets
+├── Backdoor Defenses/  # Implementation of defense algorithms
+│   ├── SVD
+│   ├── STRIP
+│   └── NeuralCleanse
+├── Demo Video/         # Demonstrate the usage of the WebUI through video
+├── WebUI/              # Visualization Platform
+└── README.md
 ```
 
-### 3. 运行
+## Demo Video
 
-在 `songmap` 目录下执行：
 
-```bash
-# Windows
-.\mvnw.cmd spring-boot:run
+https://github.com/user-attachments/assets/2888e167-088f-442d-972d-d2c5e6e2bba1
 
-# Mac/Linux
-./mvnw spring-boot:run
 
+https://github.com/user-attachments/assets/6ab99f96-a8d5-48b7-a71b-d1f12f92675e
+
+
+https://github.com/user-attachments/assets/19ece644-c217-412c-99e8-80378a80abd6
+
+
+https://github.com/user-attachments/assets/c24b11bd-5fe2-4e10-a9da-cbd14e86a0ce
+
+
+
+
+
+
+
+## 📜 Citation
+If you find this platform useful in your research, please consider citing our work:
 ```
-
-## 🔗 API 接口文档
-
-### 🎧 1. 核心听歌交互
-
-| 方法 | 路径 | 描述 | 参数示例 |
-| --- | --- | --- | --- |
-| **POST** | `/api/music/listen` | **听歌打卡**。自动连接上一首，更新听歌次数、完播率等权重。 | `name=稻香&artist=周杰伦&isFullPlay=true` |
-| **POST** | `/api/music/newlisten` | **新的一天**。强制断开与上一首的连接，开启新的轨迹链。 | `name=夜曲&artist=周杰伦` |
-| **GET** | `/api/music/listenhistory` | **最近播放**。从 Redis 获取最近播放列表 (LRU)。 | 无 |
-
-### 🔍 2. 图谱查询 (多粒度)
-
-| 方法 | 路径 | 描述 | 参数示例 |
-| --- | --- | --- | --- |
-| **GET** | `/api/music/query/node` | **查歌曲**。支持 Basic (仅属性) 和 Detailed (含出入边) 两种粒度。 | `name=七里香&detail=true` 或 `id=10` |
-| **GET** | `/api/music/query/edge` | **查关系**。查看两首歌之间的跳转权重数据。 | `from=七里香&to=江南&detail=true` |
-
-> **粒度说明：**
-> * `detail=false`: 仅返回对象本身的属性 Map。
-> * `detail=true`: 返回完整的 DTO 结构，包含邻接点信息。
-> 
-> 
-
-### ⚙️ 3. 数据管理与运维
-
-| 方法 | 路径 | 描述 | 参数示例 |
-| --- | --- | --- | --- |
-| **POST** | `/api/music/init-data` | **数据清洗**。初始化旧数据的统计指标（一次性版本迭代使用）。 | 无 |
-| **POST** | `/api/music/property/node/add` | **批量加属性**。给所有歌曲加动态标签。 | `key=mood&type=string&value=Happy` |
-| **POST** | `/api/music/property/node/delete` | **批量删属性**。 | `key=mood` |
-| **POST** | `/api/music/property/edge/add` | **批量加边属性**。 | `key=weight&type=int&value=1` |
-| **DELETE** | `/api/music/delete` | **剪断连线**。物理删除两首歌之间的关联边。 | `firstname=A&nextname=B` |
-
----
-
-## 💡 核心技术决策
-
-### 1. 混合存储架构 (Neo4j + Redis)
-
-* **问题**：单纯使用 Neo4j 查询“最近播放历史”需要依赖时间戳排序 (`ORDER BY timestamp DESC`)，在数据量大时效率低，且逻辑复杂（需处理重复听歌导致的时间戳更新）。
-* **方案**：引入 Redis `List` 结构，配合 Lua 脚本实现原子性的 **LRU (Least Recently Used)** 算法。
-* **优势**：Neo4j 专注处理复杂的图拓扑计算，Redis 专注处理高频的线性历史记录，各司其职。
-
-### 2. Redis 存储结构选型
-
-* **场景**：需要同时存储歌曲 ID（用于图查询）和 歌曲名（用于前端展示）。
-* **决策**：**方案 1 (单 List 存 `id::name`)** > 方案 2 (双 List 平行存储)。
-* **理由**：
-* **一致性**：双 List 在并发或故障场景下容易出现下标错位，导致 ID 和歌名不匹配，这是分布式系统的噩梦。
-* **原子性**：单字符串存储保证了“ID和歌名”的强绑定，Lua 脚本只需操作一个 Key。
-* **性能**：Java 内存中 `split("::")` 的耗时（纳秒级）远小于 Redis 两次网络 IO 的耗时（毫秒级）。
-
-
-
-### 3. 动态属性模型 (Schema-less)
-
-* 利用 Spring Data Neo4j 的 `@CompositeProperty` 和底层的 `Neo4jClient`，实现了在运行时给所有节点/边添加新属性的能力，无需修改 Java 实体类代码。
-* **安全性**：所有动态 Key 均经过正则白名单校验 (`^[a-zA-Z0-9_]+$`)，杜绝 Cypher 注入风险。
-
----
-
-## 📅 开发日志
-
-详细的开发历史和思考过程在https://github.com/ouroborosscr/MusicGraph/blob/main/README_tmp.md
-
-### ✅ 已完成
-* **2026.02.04 20:25** - **全维度图谱查询体系**：
-* 实现基于 `ID` 或 `Name` 的节点查询，以及基于 `ID` 或 `From/To` 的关系查询。
-* 引入 **多粒度控制 (Granularity)**：支持 **Basic** (仅返回对象属性) 和 **Detailed** (返回包含出入边、源/目标点的完整拓扑结构 DTO) 两种模式。
-* **反向查询优化**：利用 Neo4j 底层存储的双向链表特性，实现了高效的“入度查询”（），无需建立物理反向边。
-* 新增通用查询接口 `/api/music/query/node` 与 `/api/music/query/edge`。
-* **2026.02.04 18:55** - **性能优化**：解决 Neo4j 查询中的笛卡尔积警告，将单次 `MATCH (a),(b)` 拆分为双 `MATCH`。
-* **2026.02.04 18:46** - **数据层升级**：
-* 引入作者 (`artist`) 字段解决同名歌曲问题。
-* 增加统计指标：`listenCount` (入度), `fullPlayCount`, `skipCount`, `userSelectCount`, `randomSelectCount`。
-* 实现 `/init-data` 数据清洗接口，处理旧数据兼容性。
-
-
-* **2026.02.04 18:00** - **动态属性**：实现全图点/边的属性批量增删。
-* **2026.02.04 16:58** - **历史记录重构**：从图查询迁移至 Redis LRU。
-* **2026.02.04** - **基础功能**：实现 `/listen`, `/newlisten`, `/delete` 等基础图谱构建功能。
-
-### 🚧 开发中
-
-### 🔮 待办 (Roadmap)
-
-* [ ] **打分与推荐引擎**：
-* 设计权重公式：权重升高（主动选择、完播、新鲜感） vs 权重降低（随机命中、快速跳转）。
-* 实现 **随机漫步 (Random Walk)** 算法进行下一首推荐。
-
-
-* [ ] **随机播放池**：建立分级池，结合历史打分决定入池概率。
-* [ ] **外部 API 接入**：接入网易云/QQ音乐 API 补全元数据（封面、流派）。
-* [ ] **完善个人曲库**：
-* 已录入：周杰伦、林俊杰
-* 待录入：许嵩、陈奕迅、罗大佑、李宗盛、陶喆、王菲、孙燕姿等。
-
-
-
----
-
-## 📄 License
-
-MIT License
+@misc{sun2025isolatetriggerdetectingeliminating,
+      title={Isolate Trigger: Detecting and Eliminating Adaptive Backdoor Attacks}, 
+      author={Chengrui Sun and Hua Zhang and Haoran Gao and Shang Wang and Zian Tian and Jianjin Zhao and Qi Li and Hongliang Zhu and Zongliang Shen and Anmin Fu},
+      year={2025},
+      eprint={2508.04094},
+      archivePrefix={arXiv},
+      primaryClass={cs.CR},
+      url={https://arxiv.org/abs/2508.04094}, 
+}
+```
