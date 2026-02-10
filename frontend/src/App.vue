@@ -6,7 +6,7 @@ import {
   useOsTheme, 
   NConfigProvider, 
   NMessageProvider, 
-  NDialogProvider, // 【新增 1】引入 NDialogProvider
+  NDialogProvider, 
   NGlobalStyle,
   NLayout,
   NLayoutHeader,
@@ -32,9 +32,7 @@ const router = useRouter()
 const userStore = useUserStore()
 const osTheme = useOsTheme()
 
-// ================= 主题管理逻辑 =================
 type ThemeMode = 'light' | 'dark' | 'system'
-
 const themeMode = ref<ThemeMode>((localStorage.getItem('themeMode') as ThemeMode) || 'system')
 
 const activeTheme = computed<GlobalTheme | null>(() => {
@@ -57,7 +55,6 @@ const handleThemeSelect = (key: ThemeMode) => {
   localStorage.setItem('themeMode', key)
 }
 
-// ================= 用户交互逻辑 =================
 const stringToColor = (str: string) => {
   let hash = 0
   for (let i = 0; i < str.length; i++) {
@@ -85,55 +82,36 @@ const goHome = () => {
 <template>
   <n-config-provider :theme="activeTheme">
     <n-global-style />
-    
     <n-dialog-provider>
       <n-message-provider>
         <n-layout class="app-layout" position="absolute">
-          
           <n-layout-header bordered class="nav-header">
             <div class="nav-content">
               <div class="brand" @click="goHome">
                 <span class="logo-text">MusicGraph</span>
               </div>
-
               <div class="controls">
                 <n-dropdown trigger="hover" :options="themeOptions" @select="handleThemeSelect">
                   <n-button quaternary circle size="medium">
-                    <template #icon>
-                      <n-icon>
-                        <ColorPaletteOutline />
-                      </n-icon>
-                    </template>
+                    <template #icon><n-icon><ColorPaletteOutline /></n-icon></template>
                   </n-button>
                 </n-dropdown>
-
                 <n-divider vertical />
-
                 <template v-if="userStore.username">
                   <div class="user-profile">
-                    <n-avatar 
-                      round 
-                      size="small" 
-                      :style="{ backgroundColor: stringToColor(userStore.username), color: '#fff' }"
-                    >
+                    <n-avatar round size="small" :style="{ backgroundColor: stringToColor(userStore.username), color: '#fff' }">
                       {{ userStore.username[0]?.toUpperCase() }}
                     </n-avatar>
                     <span class="username-text">{{ userStore.username }}</span>
                   </div>
-                  
                   <n-button quaternary size="small" @click="handleLogout">
-                    <template #icon>
-                      <n-icon><LogOutOutline /></n-icon>
-                    </template>
+                    <template #icon><n-icon><LogOutOutline /></n-icon></template>
                     登出
                   </n-button>
                 </template>
-
                 <template v-else>
                   <n-button type="primary" size="small" @click="handleLogin">
-                    <template #icon>
-                      <n-icon><LogInOutline /></n-icon>
-                    </template>
+                    <template #icon><n-icon><LogInOutline /></n-icon></template>
                     登录
                   </n-button>
                 </template>
@@ -144,16 +122,15 @@ const goHome = () => {
           <n-layout-content class="main-content" :native-scrollbar="false">
             <router-view />
           </n-layout-content>
-
         </n-layout>
       </n-message-provider>
     </n-dialog-provider>
-    </n-config-provider>
+  </n-config-provider>
 </template>
 
 <style scoped>
 .app-layout {
-  height: 100vh; /* 确保最外层占满屏幕 */
+  height: 100vh;
   display: flex;
   flex-direction: column;
 }
@@ -214,21 +191,15 @@ const goHome = () => {
 .main-content {
   flex: 1;
   position: relative;
-  /* 【新增】确保内容区域撑满，否则 Player.vue 的 height: 100% 无效 */
   display: flex;
   flex-direction: column;
-}
-
-/* 强制让 n-layout-content 内部的滚动层也占满高度并使用 Flex */
-.n-layout-scroll-container {
-  display: flex !important;
-  flex-direction: column !important;
-  min-height: 100% !important;
-  flex: 1 !important;
 }
 </style>
 
 <style>
+/* 【全局样式修复】 */
+
+/* 1. 重置 HTML/Body，覆盖 style.css 中的错误设置 */
 html, body, #app {
   margin: 0;
   padding: 0;
@@ -237,5 +208,21 @@ html, body, #app {
   background-color: var(--n-body-color);
   color: var(--n-text-color);
   transition: background-color 0.3s, color 0.3s;
+  
+  /* 关键：覆盖 style.css 的 display:flex 和 padding */
+  display: block !important; 
+  max-width: none !important;
+  padding: 0 !important;
+  text-align: left !important;
+}
+
+/* 2. 强制 Naive UI 内部滚动容器撑满高度 */
+/* 必须写在这里（非 scoped），否则无法影响 n-layout-content 内部 */
+.n-layout-scroll-container {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  flex: 1 !important;
 }
 </style>
