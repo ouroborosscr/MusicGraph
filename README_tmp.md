@@ -84,6 +84,11 @@ GET/api/music/recommend?currentId=74 74是七里香的id
 2026.2.10 13:33:
 /api/auth/register?username=admin&password=123456 注册账号功能
 /api/auth/login?username=admin&password=123456 登录账号功能，返回一个token
+
+2026.2.10 15:17:
+添加了用户相关功能，在知识图谱上用户会指向自己可以访问的图谱，查询方法是
+MATCH p=(u:User)-[:OWNS]->(g:GraphInfo)
+RETURN p
 ```
 
 开发中：
