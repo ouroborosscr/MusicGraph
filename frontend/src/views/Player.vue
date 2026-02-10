@@ -256,27 +256,35 @@ onUnmounted(() => {
   color: var(--n-text-color-3);
 }
 
-/* 【修改点 4】新增一个外层盒子用于设置边距 */
+/* 容器：添加外边距和虚线边框 */
 .chart-out-box {
   flex: 1;
-  padding: 20px; /* 给框留出外部空间 */
+  padding: 20px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  
+  /* 【关键修改】使用 v-bind 绑定主题变量 */
+  margin: 20px;
+  border: 2px dashed v-bind('themeVars.borderColor'); /* 加粗一点(2px)方便观察 */
+  border-radius: 12px;
+  background-color: v-bind('themeVars.tableColor'); /* 给一个极淡的背景色区分 */
 }
 
+/* 内部图表框：保持实线边框 */
 .chart-wrapper {
   flex: 1;
   width: 100%;
   min-height: 400px;
   overflow: hidden;
   position: relative;
-  /* 【修改点 5】添加边框、圆角和背景色 */
-  border: 2px solid var(--n-border-color); /* 边框颜色跟随主题 */
-  border-radius: 16px; /* 圆角 */
-  background-color: var(--n-card-color); /* 框内背景色跟随主题卡片色 */
+  
+  /* 【关键修改】同样替换为 v-bind */
+  border: 2px solid v-bind('themeVars.borderColor'); 
+  border-radius: 16px;
+  background-color: v-bind('themeVars.cardColor');
   transition: border-color 0.3s, background-color 0.3s;
-  box-sizing: border-box; /* 确保边框不会撑大容器 */
+  box-sizing: border-box;
 }
 
 .loading-mask {
