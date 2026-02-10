@@ -1,5 +1,5 @@
 import { createApp } from 'vue'
-import './style.css' // Vite 默认样式，保留即可
+//import './style.css' // Vite 默认样式，保留即可
 import App from './App.vue'
 import router from './router' // 稍后创建
 import { createPinia } from 'pinia'

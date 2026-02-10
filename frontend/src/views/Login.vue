@@ -1,23 +1,44 @@
 <template>
   <div class="login-container">
-    <div class="bg-image"></div>
     <div class="login-box">
-      <n-card :bordered="false" class="glass-card">
+      <n-card class="auth-card" size="large" hoverable>
         <div class="header">
           <h1 class="title">MusicGraph</h1>
           <p class="subtitle">探索你的音乐思维轨迹</p>
         </div>
 
+        <n-tabs 
+          v-model:value="activeTab" 
+          size="large" 
+          justify-content="space-evenly"
+          type="segment"
+          animated
+        >
+          <n-tab-pane name="login" tab="登录" />
+          <n-tab-pane name="register" tab="注册" />
+        </n-tabs>
+
         <div class="form-area">
           <n-input
-            v-model:value="inputName"
+            v-model:value="form.username"
             size="large"
-            placeholder="给自己起个代号..."
-            @keyup.enter="handleLogin"
-            class="custom-input"
+            placeholder="请输入账号"
           >
             <template #prefix>
               <n-icon :component="PersonOutline" />
+            </template>
+          </n-input>
+
+          <n-input
+            v-model:value="form.password"
+            type="password"
+            show-password-on="click"
+            size="large"
+            placeholder="请输入密码"
+            @keyup.enter="handleAuth"
+          >
+            <template #prefix>
+              <n-icon :component="LockClosedOutline" />
             </template>
           </n-input>
 
@@ -25,13 +46,12 @@
             type="primary"
             size="large"
             block
-            color="#1db954" 
-            class="login-btn"
             :loading="loading"
-            @click="handleLogin"
-            :disabled="!inputName"
+            @click="handleAuth"
+            :disabled="!form.username || !form.password"
+            class="submit-btn"
           >
-            进入音乐世界
+            {{ activeTab === 'login' ? '立即登录' : '注册账号' }}
           </n-button>
         </div>
       </n-card>
@@ -40,81 +60,125 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../store/user'
-import { NCard, NInput, NButton, NIcon, useMessage } from 'naive-ui'
-import { PersonOutline } from '@vicons/ionicons5' // 确保安装了 @vicons/ionicons5
+import { NCard, NInput, NButton, NIcon, NTabs, NTabPane, useMessage } from 'naive-ui'
+import { PersonOutline, LockClosedOutline } from '@vicons/ionicons5'
+import request from '../api/request'
 
 const router = useRouter()
 const userStore = useUserStore()
 const message = useMessage()
 
-const inputName = ref('')
+const activeTab = ref('login')
 const loading = ref(false)
 
-const handleLogin = () => {
-  if (!inputName.value.trim()) {
-    message.warning('请输入一个昵称')
+const form = reactive({
+  username: '',
+  password: ''
+})
+
+const handleAuth = async () => {
+  if (!form.username.trim() || !form.password.trim()) {
+    message.warning('账号和密码不能为空')
     return
   }
+
   loading.value = true
-  setTimeout(() => {
-    userStore.setUsername(inputName.value)
-    message.success(`欢迎回来，${inputName.value}`)
-    router.push('/')
+
+  try {
+    if (activeTab.value === 'login') {
+      const res = await request.post('/auth/login', null, {
+        params: {
+          username: form.username,
+          password: form.password
+        }
+      })
+      
+      const { token, username } = res.data
+      localStorage.setItem('token', token)
+      userStore.setUsername(username)
+      
+      message.success('登录成功，欢迎回来！')
+      router.push('/')
+
+    } else {
+      await request.post('/auth/register', null, {
+        params: {
+          username: form.username,
+          password: form.password
+        }
+      })
+      
+      message.success('注册成功，请登录')
+      activeTab.value = 'login'
+    }
+  } catch (error: any) {
+    const msg = error.response?.data || '请求失败，请检查网络'
+    message.error(msg)
+  } finally {
     loading.value = false
-  }, 800)
+  }
 }
 </script>
 
 <style scoped>
 .login-container {
-  position: relative;
-  width: 100vw;
-  height: 100vh;
+  /* 使用 100% 充满父容器（App.vue 的 content 区域） */
+  width: 100%;
+  height: 100%;
   display: flex;
   justify-content: center;
   align-items: center;
-  background-color: #121212;
-  overflow: hidden;
+  /* 移除写死的背景色，依靠透明背景显示 App.vue 的底色 */
 }
-.bg-image {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(135deg, #1e1e2f 0%, #2a2a40 100%);
-  filter: brightness(0.6) blur(5px);
-  z-index: 0;
-}
+
 .login-box {
-  z-index: 1;
   width: 400px;
   max-width: 90%;
+  z-index: 1;
 }
-.glass-card {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+
+.auth-card {
   border-radius: 16px;
-  padding: 20px;
+  /* 增加一点阴影让它在浅色模式下更立体 */
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
 }
-.header { text-align: center; margin-bottom: 40px; }
+
+.header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
 .title {
-  font-size: 2.5rem;
+  font-size: 2rem;
   font-weight: 700;
+  /* 使用渐变色作为品牌标识 */
   background: linear-gradient(to right, #1db954, #1ed760);
   -webkit-background-clip: text;
   color: transparent;
+  margin: 0;
 }
-.subtitle { color: rgba(255, 255, 255, 0.6); margin-top: 10px; }
-.form-area { display: flex; flex-direction: column; gap: 20px; }
-/* 强制覆盖 input 样式适配暗黑 */
-:deep(.n-input) {
-  background-color: rgba(0, 0, 0, 0.3) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+
+.subtitle {
+  /* 使用 Naive UI 的变量让副标题颜色自动适配深浅 */
+  color: var(--n-text-color-3); 
+  margin-top: 8px;
 }
-:deep(.n-input__input-el) { color: white !important; }
+
+.form-area {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-top: 24px;
+}
+
+.submit-btn {
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+
+/* 移除所有 :deep 的 !important 样式覆盖 */
+/* 让 Naive UI 自动处理 Input 和 Tabs 的颜色 */
 </style>
