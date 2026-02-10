@@ -1,6 +1,7 @@
 package com.songmap.songmap.repository;
 
 import com.songmap.songmap.dto.EdgeDetailDTO;
+import com.songmap.songmap.dto.NeighborItemDTO;
 import com.songmap.songmap.dto.NodeDetailDTO;
 import com.songmap.songmap.entity.Song;
 import org.springframework.data.neo4j.repository.Neo4jRepository;
@@ -12,6 +13,17 @@ import java.util.Map;
 import java.util.Optional; // 别忘了导入这个
 
 public interface SongRepository extends Neo4jRepository<Song, Long>{
+
+    // 【推荐算法核心查询】获取当前歌曲的所有邻居（正向 + 反向）
+    @Query("MATCH (current:Song) WHERE id(current) = $songId " +
+           "OPTIONAL MATCH (current)-[r_out:NEXT]->(target:Song) " +
+           "WITH current, collect({direction: 'OUT', edge: properties(r_out), node: target}) as out_neighbors " +
+           "OPTIONAL MATCH (source:Song)-[r_in:NEXT]->(current) " +
+           "WITH out_neighbors, collect({direction: 'IN', edge: properties(r_in), node: source}) as in_neighbors " +
+           "RETURN out_neighbors + in_neighbors as neighbors")
+    // 注意：这里返回的是 List<NeighborItemDTO>，但 Neo4j 可能会返回嵌套结构
+    // 我们可以简单点，直接返回 Map 列表让 Service 处理，或者使用上面的 DTO
+    java.util.List<NeighborItemDTO> findAllNeighbors(@Param("songId") Long songId);
 
     // DELETE THIS: 以后不再需要全表扫描找最新的歌了
     // // 自定义查询：找到最近一次听的那首歌

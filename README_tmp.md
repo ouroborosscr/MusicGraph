@@ -65,10 +65,7 @@ POST /newlisten?name=稻香&artist=周杰伦&isFullPlay=true    添加新的歌�
                             GET /api/music/query/edge?id=55&detail=true
 查询边 - 粒度 1 (Basic) 请求: GET /api/music/query/edge?from=七里香&to=江南
 查询边 - 粒度 2 (Detailed) 请求: GET /api/music/query/edge?from=七里香&to=江南&detail=true
-```
-
-开发中：
-```
+2026.2.4 21:35:
 打分功能：
 加分项：点的主动选中率，边的主动选中率，边的正向，完播率
 
@@ -80,11 +77,27 @@ POST /newlisten?name=稻香&artist=周杰伦&isFullPlay=true    添加新的歌�
 接入api后考虑“完播率”和“快速跳转率（不喜欢）”，（现在暂时不考虑）主要的区别是是否听完副歌。听完基本能确定喜欢，不喜欢则会快速跳转。也要避免有些副歌是戛然而止的，这会导致权重过高。
 进一步的，还可以统计每条边的跳转次数（综合边权点权）
 最后实现打分
+打分算法是：https://github.com/ouroborosscr/MusicGraph/blob/main/Scoring_algorithm.md
+
+GET/api/music/recommend?currentId=74 74是七里香的id
+
+2026.2.10 13:33:
+/api/auth/register?username=admin&password=123456 注册账号功能
+/api/auth/login?username=admin&password=123456 登录账号功能，返回一个token
+```
+
+开发中：
+```
+修bug：边权不更新
 ```
 
 待开发：
 ```
+删除点
 
+修bug：
+1.newlisten错了，实际上newlisten应该是更新当前歌曲，但是并不让上一首歌指向现在这首歌，现在的newlisten会删除所有的出边，是错的。
+2.listen错了，当“江南”指向“七里香”时先听七里香再听江南，会删除原来那条线，换成“七里香”指向“江南”，应该出现两条反向的边才对，如果边本来存在，应该是听的次数加1.
 
 
 
@@ -95,12 +108,40 @@ POST /newlisten?name=稻香&artist=周杰伦&isFullPlay=true    添加新的歌�
 3.部分随机歌曲也会入池
 
 调用api
+
+做一个线上版本，区分用户
+
+处理只有单个入边的问题
+设定一个阈值，如果周围每一个点都超出了这个阈值，考虑随机跳出这个点附近（要考虑不连接图）
+关于跳出现有的随机搜索：考虑用遗传算法、模拟退火、粒子群
+考虑引入注意力机制，来处理跳前和跳后的关联性？
+
+维护一个公用初始图谱
+参考：https://www.bilibili.com/video/BV1ju41197xh/?spm_id_from=333.337.search-card.all.click&vd_source=308cb290f18cd69615bfd99ee016ce2e
+https://www.bilibili.com/video/BV1Ci6bBQEuG/?spm_id_from=333.1387.search.video_card.click
+https://www.bilibili.com/video/BV12H4y1Y7qX/?spm_id_from=333.337.search-card.all.click&vd_source=308cb290f18cd69615bfd99ee016ce2e
+
+https://www.bilibili.com/video/BV1cC4y1m7Sv/?spm_id_from=333.337.search-card.all.click&vd_source=308cb290f18cd69615bfd99ee016ce2e
+https://www.bilibili.com/video/BV1oW4y1B7re?spm_id_from=333.788.videopod.sections&vd_source=308cb290f18cd69615bfd99ee016ce2e
+https://www.bilibili.com/video/BV1Pz421z78t/?spm_id_from=333.1387.search.video_card.click&vd_source=308cb290f18cd69615bfd99ee016ce2e
+
+数据库合并功能
+
+用户图，指向自己可查询的数据库（自己创建和别人创建）
+创建新数据库的功能
+
+前端：两个页面
+1.登录注册页面
+2.主页面，歌曲播放页面
+
+
+细菌觅食算法
 ```
 
 
 自己的曲库：
 已完成：
-周杰伦、林俊杰
+周杰伦、林俊杰、许嵩、陈奕迅、罗大佑、李宗盛
 
 未完成：
-许嵩、陈奕迅、罗大佑、李宗盛、庾澄庆、张信哲、小虎队、beyond、张学友、张宇、王菲、王力宏、梁静茹、孙燕姿、徐良、汪苏泷
+庾澄庆、张信哲、小虎队、beyond、张学友、张宇、王菲、王力宏、梁静茹、孙燕姿、徐良、汪苏泷、李荣浩、薛之谦、毛不易、伍佰、刘德华、成龙、周华健

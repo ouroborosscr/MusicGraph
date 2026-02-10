@@ -61,6 +61,16 @@ docker run -d --name neo4j-music \
   -e NEO4J_AUTH=neo4j/password \
   neo4j:latest
 
+#自配环境需要安装APOC插件
+#第一步：下载对应版本的 APOC jar 包
+#注意： APOC 的版本必须与你的 Neo4j 版本严格一致！
+#如果你的 Neo4j 是 5.x：去 APOC GitHub Releases (5.x) 下载。
+#如果你的 Neo4j 是 4.x：去 APOC GitHub Releases (4.x) 下载。
+#下载名为 apoc-xxx-core.jar 的文件。
+#第二步：放入 plugins 目录
+#找到你的 Neo4j 安装目录（也就是你解压的那个文件夹），找到 plugins 文件夹。 把刚才下载的 .jar 文件扔进去。
+#路径示例：C:\neo4j-community-5.12.0\plugins\apoc-5.12.0-core.jar
+
 # 2. 启动 Redis
 docker run -d --name redis-music \
   -p 6379:6379 \
@@ -179,14 +189,15 @@ songmap.history.limit=100
 * **2026.02.04 18:00** - **动态属性**：实现全图点/边的属性批量增删。
 * **2026.02.04 16:58** - **历史记录重构**：从图查询迁移至 Redis LRU。
 * **2026.02.04** - **基础功能**：实现 `/listen`, `/newlisten`, `/delete` 等基础图谱构建功能。
+* [ ] **打分与推荐引擎**：
+* 设计权重公式：权重升高（主动选择、完播、新鲜感） vs 权重降低（随机命中、快速跳转）。打分算法是：https://github.com/ouroborosscr/MusicGraph/blob/main/Scoring_algorithm.md
+* 实现 **随机漫步 (Random Walk)** 算法进行下一首推荐。
 
 ### 🚧 开发中
 
 ### 🔮 待办 (Roadmap)
 
-* [ ] **打分与推荐引擎**：
-* 设计权重公式：权重升高（主动选择、完播、新鲜感） vs 权重降低（随机命中、快速跳转）。
-* 实现 **随机漫步 (Random Walk)** 算法进行下一首推荐。
+
 
 
 * [ ] **随机播放池**：建立分级池，结合历史打分决定入池概率。

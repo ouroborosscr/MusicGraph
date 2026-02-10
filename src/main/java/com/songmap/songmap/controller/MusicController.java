@@ -1,8 +1,11 @@
 package com.songmap.songmap.controller;
 
+import com.songmap.songmap.dto.ScoredSongDTO;
 import com.songmap.songmap.entity.Song;
 import com.songmap.songmap.service.MusicGraphService;
 import com.songmap.songmap.service.MusicHistoryService;
+
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
 import java.util.Map;
@@ -19,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
  * @author SongMap Team
  * @since 1.0.0
  */
+@Slf4j // 【新增】自动生成 log 对象
 @RestController // 声明这是一个处理 HTTP 请求的控制器，自动返回 JSON 格式数据
 @RequestMapping("/api/music") // 所有接口前缀，定义基础路径
 public class MusicController {
@@ -41,13 +45,36 @@ public class MusicController {
     // 2. 升级版听歌接口
     // POST /api/music/listen?name=夜曲&artist=周杰伦&isFullPlay=true
     @PostMapping("/listen")
-    public Song listen(@RequestParam String name,
+    public Song listen(@RequestAttribute("currentUserId") Long userId,
+                         @RequestParam String name,
                          @RequestParam(required = false, defaultValue = "Unknown") String artist,
                          @RequestParam(defaultValue = "false") boolean forceNew,
                          @RequestParam(defaultValue = "false") boolean isRandom,
                          @RequestParam(defaultValue = "true") boolean isFullPlay,
                          @RequestParam(defaultValue = "false") boolean isSkip) {
+        log.info("用户 {} 正在听 {}", userId, name);
         return musicService.addSong(name, artist, forceNew, isRandom, isFullPlay, isSkip);
+    }
+
+    @GetMapping("/recommend")
+    public List<ScoredSongDTO> recommend(@RequestParam Long currentId) {
+        // 从 Redis 获取上一首 ID，用于判断“回头路”
+        Long lastId = historyService.getLastListenedSongId();
+        // 注意：这里 historyService 取到的是 *当前* 这首（因为刚 listen 完存进去了）
+        // 实际上如果你想避开的是“前一首”，可能需要取 history list 的第 2 个元素
+        // 简单起见，我们暂且认为 lastId 就是要避开的
+        
+        // 更好的逻辑：前端传 currentId，我们去 history 查 "latest" 其实是 current，
+        // 这里的 lastId 应该是 history.get(1)
+        List<String> history = historyService.getHistory();
+        Long previousId = null;
+        if (history.size() >= 2) {
+             // 解析 history[1] 获取 ID
+             String[] parts = history.get(1).split("::");
+             previousId = Long.valueOf(parts[0]);
+        }
+
+        return musicService.recommendNextSongs(currentId, previousId);
     }
 
     // ================= 查询接口 =================

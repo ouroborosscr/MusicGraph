@@ -1,5 +1,7 @@
 package com.songmap.songmap.service;
 
+import com.songmap.songmap.dto.NeighborItemDTO;
+import com.songmap.songmap.dto.ScoredSongDTO;
 import com.songmap.songmap.entity.Song;
 import com.songmap.songmap.repository.SongRepository;
 
@@ -11,6 +13,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.Assert; // Spring自带的断言工具，用于参数校验
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -401,5 +406,95 @@ public class MusicGraphService {
         neo4jClient.query(recalcNodes).run();
 
         return "数据版本迭代完成：属性初始化完毕，统计已根据入度重算（孤立点默认为1）。";
+    }
+    /**
+     * 【核心算法】智能推荐下一首
+     * @param currentSongId 当前播放的歌曲 ID
+     * @param lastSongId 上一首播放的歌曲 ID (用于降权回头路)
+     */
+    public List<ScoredSongDTO> recommendNextSongs(Long currentSongId, Long lastSongId) {
+        // 1. 获取所有邻居
+        List<NeighborItemDTO> neighbors = songRepository.findAllNeighbors(currentSongId);
+        
+        if (neighbors == null || neighbors.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        List<ScoredSongDTO> candidates = new ArrayList<>();
+        LocalDateTime now = LocalDateTime.now();
+
+        for (NeighborItemDTO item : neighbors) {
+            Song candidateNode = item.getNode();
+            if (candidateNode == null) continue;
+            
+            Map<String, Object> edgeProps = item.getEdge();
+
+            // --- A. 计算互动分 (Interaction Score) ---
+            double edgeScore = calculateInteraction(
+                getInt(edgeProps, "userSelectCount"),
+                getInt(edgeProps, "jumpCount"),
+                getInt(edgeProps, "randomSelectCount")
+            );
+
+            double nodeScore = calculateInteraction(
+                candidateNode.getUserSelectCount(),
+                // 点没有 jumpCount，可以用 listenCount 代替或忽略
+                0, 
+                candidateNode.getRandomSelectCount()
+            );
+
+            // 基础分 = 边分 + (点分 * 0.2 辅助)
+            double baseScore = edgeScore + (nodeScore * 0.2);
+            if (baseScore < 0.1) baseScore = 0.1; // 保底分
+
+            // --- B. 计算方向因子 (Direction Factor) ---
+            double dirFactor = RankWeights.DIR_FORWARD; // 默认正向
+            
+            if ("IN".equals(item.getDirection())) {
+                dirFactor = RankWeights.DIR_BACKWARD; // 反向降权
+            }
+            
+            // 特殊逻辑：如果是刚听过的上一首 (回头路)，给予极刑
+            if (lastSongId != null && candidateNode.getId().equals(lastSongId)) {
+                dirFactor = RankWeights.DIR_REPEAT;
+            }
+
+            // --- C. 计算新鲜度因子 (Freshness Factor) ---
+            double freshnessFactor = 1.0;
+            if (candidateNode.getListenedAt() != null) {
+                long minutesDiff = java.time.temporal.ChronoUnit.MINUTES.between(candidateNode.getListenedAt(), now);
+                // 牛顿冷却公式: 1 - e^(-λt)
+                freshnessFactor = 1.0 - Math.exp(-RankWeights.COOLING_LAMBDA * minutesDiff);
+            }
+
+            // --- D. 最终得分 ---
+            double finalScore = baseScore * dirFactor * freshnessFactor;
+
+            // 封装结果
+            ScoredSongDTO dto = new ScoredSongDTO();
+            dto.setSong(candidateNode);
+            dto.setScore(finalScore);
+            dto.setReason(String.format("Base:%.1f(Edge:%.1f, Node:%.1f) * Dir:%.1f * Fresh:%.2f", 
+                baseScore, edgeScore, nodeScore, dirFactor, freshnessFactor));
+            
+            candidates.add(dto);
+        }
+
+        // 排序
+        Collections.sort(candidates);
+        return candidates;
+    }
+
+    // 辅助计算互动值：主动加分，随机减分
+    private double calculateInteraction(int userSelect, int jump, int randomSelect) {
+        return (userSelect * RankWeights.W_USER_SELECT) 
+             + (jump * RankWeights.W_JUMP) 
+             - (randomSelect * RankWeights.W_RANDOM);
+    }
+
+    private int getInt(Map<String, Object> map, String key) {
+        if (map == null || !map.containsKey(key)) return 0;
+        Object val = map.get(key);
+        return val instanceof Number ? ((Number) val).intValue() : 0;
     }
 }
