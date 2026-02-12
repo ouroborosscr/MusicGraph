@@ -1,22 +1,27 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { ArrowLeft, Play, Plus, Minus } from 'lucide-react';
-import Navbar from '../components/Navbar';
 import * as echarts from 'echarts';
+import { MoveDiagonal, Play, ArrowLeft, Plus, Minus } from 'lucide-react';
+import Navbar from '../components/Navbar';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import request from '../utils/request';
-
 const Player = () => {
   const { id } = useParams()
   const navigate = useNavigate()
   const { isLoggedIn } = useAuth()
+  
+  // ================= 1. 使用 useRef 存储实例 (关键优化) =================
   const chartRef = useRef(null)
-  const containerRef = useRef(null)
+  const boxRef = useRef(null)
+  const chartInstance = useRef(null) // 不会触发重渲染
+
   const [loading, setLoading] = useState(true)
   const [graphName, setGraphName] = useState('加载中...')
   const [nodeCount, setNodeCount] = useState(0)
   const [currentZoom, setCurrentZoom] = useState(0.3)
-  const [myChart, setMyChart] = useState(null)
+
+  // 拖拽状态
   const [resizeState, setResizeState] = useState({
     isResizing: false,
     width: 0,
@@ -28,12 +33,30 @@ const Player = () => {
     resizeMode: ''
   })
 
-  const initChart = useCallback((nodes, links) => {
+  // ================= 2. 渲染图表逻辑 (初始化 + 更新) =================
+  const renderChart = useCallback((nodes, links) => {
     if (!chartRef.current) return
     
-    const chart = echarts.init(chartRef.current)
-    setMyChart(chart)
+    // A. 懒初始化：只有实例不存在时才 init
+    if (!chartInstance.current) {
+      chartInstance.current = echarts.init(chartRef.current)
+      
+      // 事件监听只绑定一次
+      chartInstance.current.on('click', (params) => {
+        if (params.dataType === 'node') {
+          console.log(`选中歌曲: ${params.data.name}`)
+        }
+      })
+      
+      chartInstance.current.on('graphRoam', (params) => {
+        if (params.zoom) {
+          // 这里只更新 React 状态，不需要同步回 ECharts（它自己知道缩放了）
+          setCurrentZoom(prev => prev * params.zoom)
+        }
+      })
+    }
     
+    // B. 数据更新：无论是否新建，都执行 setOption
     const option = {
       backgroundColor: 'transparent',
       title: { show: false },
@@ -54,7 +77,7 @@ const Player = () => {
           type: 'graph',
           layout: 'force',
           layoutAnimation: true,
-          zoom: currentZoom,
+          zoom: currentZoom, // 注意：这里使用了最新的 zoom 状态
           label: { 
             show: true, 
             position: 'right', 
@@ -100,21 +123,16 @@ const Player = () => {
       ]
     }
 
-    chart.setOption(option)
+    // 设置配置项 (notMerge: true 表示完全替换旧数据，防止残影)
+    chartInstance.current.setOption(option, { notMerge: true })
     
-    chart.on('click', (params) => {
-      if (params.dataType === 'node') {
-        console.log(`选中歌曲: ${params.data.name}`)
-      }
-    })
+    // 【核心修复】数据加载完成后，强制触发一次 resize
+    // 这能确保图表立即填满容器，不需要等待下一次交互
+    chartInstance.current.resize()
     
-    chart.on('graphRoam', (params) => {
-      if (params.zoom) {
-        setCurrentZoom(prev => prev * params.zoom)
-      }
-    })
-  }, [currentZoom])
+  }, [currentZoom]) 
 
+  // ================= 3. 数据获取 =================
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
@@ -129,38 +147,125 @@ const Player = () => {
         y: Math.random() * 600
       }))
       
+      // 数据准备好后渲染
       setTimeout(() => {
-        initChart(processedNodes, links)
-      }, 100)
+        renderChart(processedNodes, links)
+      }, 50)
     } catch (error) {
       console.error('无法加载图谱数据:', error)
     } finally {
       setLoading(false)
     }
-  }, [id, initChart])
+  }, [id, renderChart])
 
+  // ================= 4. 生命周期管理 =================
   useEffect(() => {
-    // 检查持久化状态
     const hasToken = localStorage.getItem('token');
     const isLoggedInStorage = localStorage.getItem('isLoggedIn') === 'true';
 
-    // 如果内存状态、Token和本地存储标志位都没有，才重定向
     if (!isLoggedIn && !hasToken && !isLoggedInStorage) {
       navigate('/login');
       return;
     }
     
-    // 只要有其中一个证明已登录，就允许加载数据
     fetchData();
     
+    // 【关键优化】只在组件卸载时销毁实例
     return () => {
-      if (myChart) {
-        myChart.dispose();
+      if (chartInstance.current) {
+        chartInstance.current.dispose();
+        chartInstance.current = null;
       }
     }
-  }, [isLoggedIn, navigate, fetchData, myChart])
+  }, [isLoggedIn, navigate, fetchData]) // 依赖中不再包含 chartInstance
 
-  // 同样增加一个"正在加载"的保护层
+  // ================= 5. 拖拽缩放逻辑 (保持不变) =================
+  const startResize = (e, mode) => {
+    e.preventDefault();
+    if (!boxRef.current) return;
+    const rect = boxRef.current.getBoundingClientRect();
+    setResizeState({
+      isResizing: true, resizeMode: mode, startX: e.clientX, startY: e.clientY,
+      startWidth: rect.width, startHeight: rect.height,
+      width: resizeState.width || rect.width, height: resizeState.height || rect.height
+    });
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!resizeState.isResizing) return;
+      const dx = e.clientX - resizeState.startX;
+      const dy = e.clientY - resizeState.startY;
+      const minSize = 300;
+      let newWidth = resizeState.width;
+      let newHeight = resizeState.height;
+
+      if (resizeState.resizeMode === 'width' || resizeState.resizeMode === 'both') 
+        newWidth = Math.max(minSize, resizeState.startWidth + dx);
+      if (resizeState.resizeMode === 'height' || resizeState.resizeMode === 'both') 
+        newHeight = Math.max(minSize, resizeState.startHeight + dy);
+
+      setResizeState(prev => ({ ...prev, width: newWidth, height: newHeight }));
+    };
+
+    const handleMouseUp = () => {
+      if (resizeState.isResizing) {
+        setResizeState(prev => ({ ...prev, isResizing: false }));
+        chartInstance.current?.resize(); // 拖拽结束重置图表大小
+      }
+    };
+
+    if (resizeState.isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'nwse-resize';
+    }
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+  }, [resizeState]);
+
+  // 监听容器大小变化
+  useEffect(() => {
+    if (!boxRef.current) return;
+    const resizeObserver = new ResizeObserver(() => {
+      chartInstance.current?.resize();
+    });
+    resizeObserver.observe(boxRef.current);
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  // 【新增】当 loading 状态变化时，确保图表 resize
+  useEffect(() => {
+    if (!loading && chartInstance.current) {
+      // 当 loading 消失，界面布局可能会微调（例如遮罩层消失），再次 resize 确保万无一失
+      chartInstance.current.resize()
+    }
+  }, [loading])
+
+  const boxStyle = {
+    minHeight: '600px',
+    position: 'relative',
+    ...(resizeState.width > 0 ? { width: `${resizeState.width}px`, flex: 'none' } : { flex: 1 }),
+    ...(resizeState.height > 0 ? { height: `${resizeState.height}px` } : {}),
+  };
+
+  const handleZoom = (ratio) => {
+    const newZoom = currentZoom * ratio
+    if (newZoom >= 0.1 && newZoom <= 10) {
+      setCurrentZoom(newZoom)
+      if (chartInstance.current) {
+        chartInstance.current.setOption({ series: [{ zoom: newZoom }] })
+      }
+    }
+  }
+
+  const goBack = () => navigate('/')
+
   if (!isLoggedIn && localStorage.getItem('isLoggedIn') === 'true') {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -172,36 +277,15 @@ const Player = () => {
     );
   }
 
-  if (!isLoggedIn) {
-    return null
-  }
-
-  const handleZoom = (ratio) => {
-    const newZoom = currentZoom * ratio
-    if (newZoom >= 0.1 && newZoom <= 10) {
-      setCurrentZoom(newZoom)
-      if (myChart) {
-        myChart.setOption({ series: [{ zoom: newZoom }] })
-      }
-    }
-  }
-
-  const goBack = () => {
-    navigate('/')
-  }
+  if (!isLoggedIn) return null;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <Navbar />
-      
-      <div className="flex-1 flex flex-col">
-        {/* 头部 */}
-        <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+      <div className="flex-1 flex flex-col p-4 overflow-hidden">
+        <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-lg shadow-sm mb-4 shrink-0">
           <div className="flex items-center space-x-4">
-            <button
-              onClick={goBack}
-              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-            >
+            <button onClick={goBack} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
               <ArrowLeft className="h-5 w-5 text-gray-600" />
             </button>
             <div>
@@ -215,39 +299,35 @@ const Player = () => {
           </button>
         </div>
 
-        {/* 图表容器 */}
-        <div className="flex-1 p-6">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 h-full relative">
-            {loading && (
-              <div className="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center z-10">
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                  <p className="text-gray-600">正在加载星图...</p>
-                </div>
+        <div 
+          ref={boxRef}
+          className={`bg-white rounded-xl shadow-sm border-2 border-dashed border-gray-300 relative transition-colors duration-200 ${resizeState.isResizing ? 'border-blue-400' : 'hover:border-blue-300'}`}
+          style={boxStyle}
+        >
+          {loading && (
+            <div className="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center z-20 rounded-xl">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-600">正在加载星图...</p>
               </div>
-            )}
-            
-            <div 
-              ref={chartRef}
-              className="w-full h-full rounded-xl"
-              style={{ minHeight: '600px' }}
-            ></div>
-
-            {/* 缩放控制 */}
-            <div className="absolute bottom-6 right-6 flex flex-col space-y-2">
-              <button
-                onClick={() => handleZoom(1.2)}
-                className="bg-white border border-gray-300 rounded-lg p-2 hover:bg-gray-50 transition-colors shadow-sm"
-              >
-                <Plus className="h-4 w-4 text-gray-600" />
-              </button>
-              <button
-                onClick={() => handleZoom(0.8)}
-                className="bg-white border border-gray-300 rounded-lg p-2 hover:bg-gray-50 transition-colors shadow-sm"
-              >
-                <Minus className="h-4 w-4 text-gray-600" />
-              </button>
             </div>
+          )}
+          
+          <div ref={chartRef} className="w-full h-full rounded-xl overflow-hidden"></div>
+
+          <div className="absolute bottom-6 right-6 flex flex-col space-y-2 z-10">
+            <button onClick={() => handleZoom(1.2)} className="bg-white border border-gray-300 rounded-lg p-2 hover:bg-gray-50 transition-colors shadow-sm">
+              <Plus className="h-4 w-4 text-gray-600" />
+            </button>
+            <button onClick={() => handleZoom(0.8)} className="bg-white border border-gray-300 rounded-lg p-2 hover:bg-gray-50 transition-colors shadow-sm">
+              <Minus className="h-4 w-4 text-gray-600" />
+            </button>
+          </div>
+
+          <div className="absolute top-0 right-0 bottom-6 w-4 cursor-ew-resize hover:bg-blue-500/10 z-20" onMouseDown={(e) => startResize(e, 'width')}></div>
+          <div className="absolute bottom-0 left-0 right-6 h-4 cursor-ns-resize hover:bg-blue-500/10 z-20" onMouseDown={(e) => startResize(e, 'height')}></div>
+          <div className="absolute bottom-0 right-0 w-8 h-8 cursor-nwse-resize bg-white border-t border-l border-gray-200 rounded-tl-lg flex items-center justify-center hover:bg-blue-50 z-30" onMouseDown={(e) => startResize(e, 'both')}>
+            <MoveDiagonal className="h-4 w-4 text-gray-400" />
           </div>
         </div>
       </div>
