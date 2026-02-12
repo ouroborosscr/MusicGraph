@@ -1,11 +1,11 @@
-
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import * as echarts from 'echarts';
-import { MoveDiagonal, Play, ArrowLeft, Plus, Minus } from 'lucide-react';
+import { ArrowLeft, Play, Plus, Minus, MoveDiagonal } from 'lucide-react';
 import Navbar from '../components/Navbar';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import * as echarts from 'echarts';
 import request from '../utils/request';
+
 const Player = () => {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -50,13 +50,12 @@ const Player = () => {
       
       chartInstance.current.on('graphRoam', (params) => {
         if (params.zoom) {
-          // 这里只更新 React 状态，不需要同步回 ECharts（它自己知道缩放了）
           setCurrentZoom(prev => prev * params.zoom)
         }
       })
     }
     
-    // B. 数据更新：无论是否新建，都执行 setOption
+    // B. 数据更新
     const option = {
       backgroundColor: 'transparent',
       title: { show: false },
@@ -77,7 +76,7 @@ const Player = () => {
           type: 'graph',
           layout: 'force',
           layoutAnimation: true,
-          zoom: currentZoom, // 注意：这里使用了最新的 zoom 状态
+          zoom: currentZoom,
           label: { 
             show: true, 
             position: 'right', 
@@ -123,12 +122,14 @@ const Player = () => {
       ]
     }
 
-    // 设置配置项 (notMerge: true 表示完全替换旧数据，防止残影)
+    // 设置配置项
     chartInstance.current.setOption(option, { notMerge: true })
     
     // 【核心修复】数据加载完成后，强制触发一次 resize
     // 这能确保图表立即填满容器，不需要等待下一次交互
-    chartInstance.current.resize()
+    setTimeout(() => {
+        chartInstance.current?.resize();
+    }, 10);
     
   }, [currentZoom]) 
 
@@ -170,16 +171,15 @@ const Player = () => {
     
     fetchData();
     
-    // 【关键优化】只在组件卸载时销毁实例
     return () => {
       if (chartInstance.current) {
         chartInstance.current.dispose();
         chartInstance.current = null;
       }
     }
-  }, [isLoggedIn, navigate, fetchData]) // 依赖中不再包含 chartInstance
+  }, [isLoggedIn, navigate, fetchData])
 
-  // ================= 5. 拖拽缩放逻辑 (保持不变) =================
+  // ================= 5. 拖拽缩放逻辑 =================
   const startResize = (e, mode) => {
     e.preventDefault();
     if (!boxRef.current) return;
@@ -229,7 +229,7 @@ const Player = () => {
     };
   }, [resizeState]);
 
-  // 监听容器大小变化
+  // 监听容器大小变化 (自动修正显示问题的关键)
   useEffect(() => {
     if (!boxRef.current) return;
     const resizeObserver = new ResizeObserver(() => {
@@ -238,14 +238,6 @@ const Player = () => {
     resizeObserver.observe(boxRef.current);
     return () => resizeObserver.disconnect();
   }, []);
-
-  // 【新增】当 loading 状态变化时，确保图表 resize
-  useEffect(() => {
-    if (!loading && chartInstance.current) {
-      // 当 loading 消失，界面布局可能会微调（例如遮罩层消失），再次 resize 确保万无一失
-      chartInstance.current.resize()
-    }
-  }, [loading])
 
   const boxStyle = {
     minHeight: '600px',
@@ -299,6 +291,7 @@ const Player = () => {
           </button>
         </div>
 
+        {/* 这一层 div 是关键，包含了 ref={boxRef} 和拖拽手柄 */}
         <div 
           ref={boxRef}
           className={`bg-white rounded-xl shadow-sm border-2 border-dashed border-gray-300 relative transition-colors duration-200 ${resizeState.isResizing ? 'border-blue-400' : 'hover:border-blue-300'}`}
@@ -324,6 +317,7 @@ const Player = () => {
             </button>
           </div>
 
+          {/* 拖拽手柄 (Resize Handles) - 之前你的代码里缺了这些 */}
           <div className="absolute top-0 right-0 bottom-6 w-4 cursor-ew-resize hover:bg-blue-500/10 z-20" onMouseDown={(e) => startResize(e, 'width')}></div>
           <div className="absolute bottom-0 left-0 right-6 h-4 cursor-ns-resize hover:bg-blue-500/10 z-20" onMouseDown={(e) => startResize(e, 'height')}></div>
           <div className="absolute bottom-0 right-0 w-8 h-8 cursor-nwse-resize bg-white border-t border-l border-gray-200 rounded-tl-lg flex items-center justify-center hover:bg-blue-50 z-30" onMouseDown={(e) => startResize(e, 'both')}>
