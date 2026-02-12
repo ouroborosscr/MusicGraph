@@ -11,6 +11,8 @@
 
 结合 **Redis** 的 LRU 缓存机制，本项目实现了一个混合存储架构，既能处理复杂的图谱拓扑查询，又能高效处理高频的历史记录访问。
 
+**Demo**: https://login-security-haven.nocode.host/#/login
+
 ## 📂 项目结构
 
 ```

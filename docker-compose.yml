@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # Neo4j 图数据库服务
+  neo4j:
+    image: neo4j:5.12.0  # 建议固定版本，与你 README 中提到的 5.x 兼容
+    container_name: neo4j-music
+    restart: always
+    ports:
+      - "7474:7474" # HTTP 浏览器访问端口
+      - "7687:7687" # Bolt 协议端口 (Java 连接用)
+    environment:
+      # 设置账号密码，对应 application.properties
+      - NEO4J_AUTH=neo4j/12345678
+      # 开启 APOC 插件 (重要：根据 README 提示需要 APOC)
+      - NEO4J_PLUGINS=["apoc"]
+      # APOC 配置权限
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      - NEO4J_apoc_export_file_enabled=true
+      - NEO4J_apoc_import_file_enabled=true
+    volumes:
+      - ./docker-data/neo4j/data:/data
+      - ./docker-data/neo4j/logs:/logs
+      - ./docker-data/neo4j/conf:/conf
+      - ./docker-data/neo4j/plugins:/plugins
+    networks:
+      - music-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis 缓存服务
+  redis:
+    image: redis:latest
+    container_name: redis-music
+    restart: always
+    ports:
+      - "6379:6379"
+    # 如果 application.properties 后续加了密码，可以用 command: redis-server --requirepass 123456
+    volumes:
+      - ./docker-data/redis/data:/data
+    networks:
+      - music-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  music-net:
+    driver: bridge
