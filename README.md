@@ -78,6 +78,21 @@ docker run -d --name redis-music \
   -p 6379:6379 \
   redis:latest
 
+或者windows本地启动：
+redis-server
+
+# 3.启动QQ音乐API
+cd QQMusicAPI
+yarn
+yarn start
+
+# 4.安装前端依赖
+cd frontend
+npm install
+npm install axios pinia vue-router
+npm install naive-ui vfonts # UI库
+npm install echarts # 图表库
+
 ```
 
 ### 2. 配置
@@ -107,6 +122,10 @@ songmap.history.limit=100
 
 # Mac/Linux
 ./mvnw spring-boot:run
+
+#运行前端：
+cd frontend
+npm run dev
 
 ```
 

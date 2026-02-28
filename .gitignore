@@ -31,3 +31,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### QQMusicAPI ###
+QQMusicAPI/node_modules
