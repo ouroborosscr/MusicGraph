@@ -92,6 +92,7 @@ npm install
 npm install axios pinia vue-router
 npm install naive-ui vfonts # UI库
 npm install echarts # 图表库
+npm install lucide-vue-next
 
 ```
 

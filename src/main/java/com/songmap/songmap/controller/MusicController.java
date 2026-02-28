@@ -71,22 +71,30 @@ public class MusicController {
         return musicService.addSong(userId, graphId, name, artist, false, isRandom, isFullPlay, isSkip);
     }
 
+    // 【核心修复】推荐接口：增加 graphId 参数，并正确获取该图谱的历史
     @GetMapping("/recommend")
-    public List<ScoredSongDTO> recommend(@RequestParam Long currentId) {
-        // 从 Redis 获取上一首 ID，用于判断“回头路”
-        Long lastId = historyService.getLastListenedSongId();
-        // 注意：这里 historyService 取到的是 *当前* 这首（因为刚 listen 完存进去了）
-        // 实际上如果你想避开的是“前一首”，可能需要取 history list 的第 2 个元素
-        // 简单起见，我们暂且认为 lastId 就是要避开的
+    public List<ScoredSongDTO> recommend(@RequestAttribute("currentUserId") Long userId,
+                                         @RequestParam Long graphId, // 必须接收 graphId
+                                         @RequestParam Long currentId) {
         
-        // 更好的逻辑：前端传 currentId，我们去 history 查 "latest" 其实是 current，
-        // 这里的 lastId 应该是 history.get(1)
-        List<String> history = historyService.getHistory();
+        // 我们需要获取该图谱的历史记录，目的是找到“上一首”播放的歌（index=1），
+        // 以便在推荐算法中对其进行降权（避免推荐刚刚听完的那首，形成死循环）。
+        // history[0] 是 currentId (刚刚 listen 进去的)
+        // history[1] 是 previousId (我们要找的)
+        
+        List<Map<String, String>> history = historyService.getStructuredHistory(graphId);
         Long previousId = null;
-        if (history.size() >= 2) {
-             // 解析 history[1] 获取 ID
-             String[] parts = history.get(1).split("::");
-             previousId = Long.valueOf(parts[0]);
+
+        if (history != null && history.size() >= 2) {
+             try {
+                 // 解析 history[1] 获取 ID
+                 String idStr = history.get(1).get("id");
+                 if (idStr != null) {
+                     previousId = Long.valueOf(idStr);
+                 }
+             } catch (NumberFormatException e) {
+                 log.warn("解析历史记录ID失败", e);
+             }
         }
 
         return musicService.recommendNextSongs(currentId, previousId);
