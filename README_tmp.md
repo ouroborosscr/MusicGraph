@@ -105,6 +105,15 @@ POST /api/music/node/delete?graphId=858&id=1147 删除858图的id为1147的点�
 POST /api/music/newlisten?name=test3&graphId=858  添加新的歌曲test3到858图中，需要在Header里添加token：Authorization:xxx
 POST /api/music/listen?name=test3&graphId=858  添加新的歌曲test3到858图中，需要在Header里添加token：Authorization:xxx
 
+2026.2.28 15:29:
+设置 Cookie：
+POST /api/user/cookie?username=您的用户名&cookie=您的QQ音乐Cookie，需要在 Header 加 Authorization Token
+测试搜索：
+GET /api/music/search?key=周杰伦 需要在 Header 加 Authorization Token
+查询播放地址：
+GET /api/music/song/urls?id=0039MnYb0qxYhV,004Z8Ihr0JIu5s   需要在 Header 加 Authorization Token
+
+
 ```
 
 开发中：

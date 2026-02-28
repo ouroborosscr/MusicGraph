@@ -31,6 +31,13 @@
             >
               删除歌曲关联
             </div>
+            <div 
+              class="tab-item" 
+              :class="{ active: activeModule === 'deleteNode' }"
+              @click="activeModule = 'deleteNode'"
+            >
+              删除歌曲
+            </div>
           </div>
 
           <div class="module-body">
@@ -56,6 +63,14 @@
               <div class="btn-row">
                 <button class="btn btn-secondary" @click="clearDeleteForm">清空</button>
                 <button class="btn btn-primary" @click="handleDeleteRelation">确定</button>
+              </div>
+            </div>
+
+            <div v-if="activeModule === 'deleteNode'" class="form-group">
+              <input v-model="forms.delNodeName" type="text" placeholder="请输入要删除的歌曲名称" class="custom-input" />
+              <div class="btn-row">
+                <button class="btn btn-secondary" @click="forms.delNodeName = ''">清空</button>
+                <button class="btn btn-primary" @click="handleDeleteNode">确定</button>
               </div>
             </div>
           </div>
@@ -100,13 +115,14 @@ const collapsed = reactive({
   manual: false,
   config: true
 })
-const activeModule = ref('listen') // 'listen' | 'newListen' | 'delete'
+const activeModule = ref('listen') // 'listen' | 'newListen' | 'delete' | 'deleteNode'
 
 const forms = reactive({
   listenName: '',
   newListenName: '',
   delFirstName: '',
-  delNextName: ''
+  delNextName: '',
+  delNodeName: '' // 改为 Name
 })
 
 // --- 交互逻辑 ---
@@ -118,30 +134,44 @@ const toggleCollapse = (key: 'manual' | 'config') => {
 // 1. 添加听歌记录
 const handleAddListen = async () => {
   if (!forms.listenName.trim()) return alert('请输入歌曲名称')
+  
+  const graphId = route.params.id;
+  if (!graphId) return alert('未找到图谱ID');
+
   try {
     await request.post('/music/listen', null, {
-      params: { name: forms.listenName }
+      params: { 
+        name: forms.listenName,
+        graphId: graphId 
+      }
     })
     alert('添加听歌记录成功')
     refreshGraph()
-  } catch (error) {
+  } catch (error: any) {
     console.error(error)
-    alert('操作失败')
+    alert('操作失败: ' + (error.response?.data || error.message))
   }
 }
 
-// 2. 添加新的记录
+// 2. 添加新的记录 (断连)
 const handleAddNewListen = async () => {
   if (!forms.newListenName.trim()) return alert('请输入歌曲名称')
+  
+  const graphId = route.params.id;
+  if (!graphId) return alert('未找到图谱ID');
+
   try {
     await request.post('/music/newlisten', null, {
-      params: { name: forms.newListenName }
+      params: { 
+        name: forms.newListenName,
+        graphId: graphId
+      }
     })
     alert('添加新记录成功')
     refreshGraph()
-  } catch (error) {
+  } catch (error: any) {
     console.error(error)
-    alert('操作失败')
+    alert('操作失败: ' + (error.response?.data || error.message))
   }
 }
 
@@ -170,12 +200,44 @@ const handleDeleteRelation = async () => {
   }
 }
 
+// 4. 删除歌曲节点 (按名称)
+const handleDeleteNode = async () => {
+  if (!forms.delNodeName.trim()) return alert('请输入要删除的歌曲名称')
+  
+  const graphId = route.params.id;
+  if (!graphId) return alert('未找到图谱ID');
+
+  try {
+    await request.delete('/music/node/delete', {
+      params: {
+        graphId: graphId,
+        name: forms.delNodeName // 传 name 参数
+      }
+    })
+    alert('删除歌曲成功')
+    forms.delNodeName = '' // 清空输入框
+    refreshGraph()
+  } catch (error: any) {
+    console.error(error)
+    alert('操作失败: ' + (error.response?.data || error.message))
+  }
+}
+
 // --- 图谱逻辑 ---
 
 const initChart = () => {
-  // 【修复】Vue中使用 .value 获取 DOM 元素
   if (chartRef.value && !myChart) {
     myChart = echarts.init(chartRef.value)
+    
+    // 点击节点时，自动填充名字到删除框，方便操作
+    myChart.on('click', (params) => {
+      if (params.dataType === 'node') {
+        const nodeName = params.data.name;
+        console.log('Clicked Node Name:', nodeName);
+        forms.delNodeName = nodeName;
+        activeModule.value = 'deleteNode'; // 自动切换到删除 Tab
+      }
+    })
   }
 }
 
@@ -184,7 +246,6 @@ const refreshGraph = () => {
 }
 
 const loadData = async () => {
-  // 确保 DOM 已经渲染
   await nextTick()
   if (!myChart) initChart()
   
@@ -197,7 +258,14 @@ const loadData = async () => {
     
     const option = {
       title: { text: '音乐知识图谱', left: 'center' },
-      tooltip: {},
+      tooltip: {
+        formatter: (params: any) => {
+          if (params.dataType === 'node') {
+            return `<b>${params.data.name}</b><br/>ID: ${params.data.id}<br/>歌手: ${params.data.artist}`;
+          }
+          return `${params.data.source} -> ${params.data.target}`;
+        }
+      },
       series: [
         {
           type: 'graph',
@@ -234,7 +302,6 @@ const handleResize = () => {
 }
 
 onMounted(() => {
-  // 页面挂载后初始化图表
   initChart()
   loadData()
   window.addEventListener('resize', handleResize)
@@ -266,21 +333,20 @@ onUnmounted(() => {
   gap: 20px;
   overflow-y: auto;
   background-color: #fff;
-  box-sizing: border-box; /* 确保 padding 不会撑破布局 */
+  box-sizing: border-box;
 }
 
 .right-panel {
   width: 50%;
   height: 100%;
   position: relative;
-  /* 确保右侧面板有背景色，避免视觉上看起来像“没了” */
   background-color: #ffffff; 
 }
 
 .chart-container {
   width: 100%;
   height: 100%;
-  min-height: 400px; /* 给一个最小高度兜底 */
+  min-height: 400px;
 }
 
 /* 控制框样式 */
@@ -291,7 +357,7 @@ onUnmounted(() => {
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
   overflow: hidden;
   transition: all 0.3s;
-  flex-shrink: 0; /* 防止被压缩 */
+  flex-shrink: 0;
 }
 
 .box-header {

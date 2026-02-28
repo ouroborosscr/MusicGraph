@@ -12,6 +12,14 @@ import java.util.Map;
 
 import org.springframework.web.bind.annotation.*;
 
+import com.songmap.songmap.entity.User;
+import com.songmap.songmap.repository.UserRepository;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.RestTemplate;
+
 /**
  * 音乐控制器类，处理与音乐相关的 HTTP 请求
  * <p>
@@ -31,15 +39,21 @@ public class MusicController {
      */
     private final MusicGraphService musicService;
     private final MusicHistoryService historyService;
+    private final UserRepository userRepository; // 【新增】
+    // 【新增】定义 QQMusicApi 地址
+    private static final String QQ_API_BASE = "http://localhost:3300";
 
     /**
      * 构造函数，通过依赖注入获取音乐图服务实例
      * 
      * @param musicService 音乐图服务实例
      */
-    public MusicController(MusicGraphService musicService, MusicHistoryService historyService) {
+    public MusicController(MusicGraphService musicService, 
+                           MusicHistoryService historyService,
+                           UserRepository userRepository) { // 【修改】构造函数
         this.musicService = musicService;
         this.historyService = historyService;
+        this.userRepository = userRepository;
     }
 
     // 2. 升级版听歌接口
@@ -135,15 +149,15 @@ public class MusicController {
         return "尝试删除连接: " + firstName + " -> " + nextName;
     }
     /**
-     * 删除指定节点（点）
-     * DELETE /api/music/node/delete?graphId=10&id=25
+     * 删除指定歌曲（按名称）
+     * DELETE /api/music/node/delete?graphId=10&name=夜曲
      */
-    @RequestMapping("/node/delete")
+    @DeleteMapping("/node/delete") // 建议明确使用 DeleteMapping
     public String deleteNode(@RequestAttribute("currentUserId") Long userId,
                              @RequestParam Long graphId,
-                             @RequestParam Long id) {
-        musicService.deleteNode(userId, graphId, id);
-        return "成功删除节点 ID: " + id;
+                             @RequestParam String name) { // 参数改为 name
+        musicService.deleteNode(userId, graphId, name);
+        return "成功删除歌曲: " + name;
     }
 
     /**
@@ -235,6 +249,63 @@ public class MusicController {
     public String removeEdgeProperty(@RequestParam String key) {
         musicService.removeEdgeProperty(key);
         return "成功删除所有边的属性: " + key;
+    }
+
+    /**
+     * 4. 歌曲搜索 (透传 Cookie)
+     * GET /api/music/search?key=周杰伦
+     */
+    @GetMapping("/search")
+    public String searchSong(@RequestAttribute("currentUserId") Long userId, 
+                             @RequestParam String key) {
+        // 1. 获取用户 Cookie
+        String cookie = getUserCookie(userId);
+        
+        // 2. 构造请求
+        String url = QQ_API_BASE + "/search?key=" + key;
+        return proxyGetRequest(url, cookie);
+    }
+
+    /**
+     * 5. 获取播放链接 (透传 Cookie)
+     * GET /api/music/song/urls?id=0039MnYb0qxYhV
+     */
+    @GetMapping("/song/urls")
+    public String getSongUrls(@RequestAttribute("currentUserId") Long userId, 
+                              @RequestParam String id) {
+        // 1. 获取用户 Cookie
+        String cookie = getUserCookie(userId);
+        
+        // 2. 构造请求
+        String url = QQ_API_BASE + "/song/urls?id=" + id;
+        return proxyGetRequest(url, cookie);
+    }
+
+    // --- 辅助方法 ---
+
+    private String getUserCookie(Long userId) {
+        User user = userRepository.findById(userId).orElse(null);
+        return (user != null) ? user.getQqCookie() : null;
+    }
+
+    private String proxyGetRequest(String url, String cookie) {
+        RestTemplate restTemplate = new RestTemplate();
+        HttpHeaders headers = new HttpHeaders();
+        
+        // 如果有 Cookie，则添加到请求头
+        if (cookie != null && !cookie.isEmpty()) {
+            headers.add("Cookie", cookie);
+        }
+        
+        HttpEntity<String> entity = new HttpEntity<>(headers);
+        
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            return response.getBody();
+        } catch (Exception e) {
+            log.error("QQMusicApi call failed: {}", e.getMessage());
+            return "{\"code\": 500, \"msg\": \"调用第三方接口失败\"}";
+        }
     }
 
     // 1. 初始化数据的接口（跑一次就行）

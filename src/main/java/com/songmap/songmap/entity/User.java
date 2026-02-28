@@ -26,6 +26,11 @@ public class User {
     
     private String avatar; // 头像
 
+    private String role; // "USER", "ADMIN"
+
+    // 【新增】存储用户的 QQ 音乐 Cookie
+    private String qqCookie;
+
     // 后面可以加：
     // @Relationship(type = "OWNS", direction = Relationship.Direction.OUTGOING)
     // private List<GraphScope> graphs;

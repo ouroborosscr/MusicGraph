@@ -239,14 +239,14 @@ public class MusicGraphService {
     }
 
     /**
-     * 【新增】删除指定节点及其关联关系
+     * 【修改】删除指定名称的歌曲节点及其关联关系
      * @param userId 当前用户ID
      * @param graphId 图谱ID
-     * @param songId 歌曲节点ID
+     * @param songName 歌曲名称
      */
     @Transactional
-    public void deleteNode(Long userId, Long graphId, Long songId) {
-        Assert.notNull(songId, "Song ID must not be null");
+    public void deleteNode(Long userId, Long graphId, String songName) {
+        Assert.hasText(songName, "Song name must not be empty"); // 参数校验
 
         // 1. 校验图谱权限
         GraphInfo graph = graphInfoRepository.findByIdAndUserId(graphId, userId)
@@ -254,15 +254,16 @@ public class MusicGraphService {
         
         String label = graph.getNodeLabel();
 
-        // 2. 执行删除 (DETACH DELETE 会同时删除该点连接的所有边)
-        // 增加 label 约束，防止误删其他图谱中 ID 恰好相同的点（虽然 ID 全局唯一，但为了安全）
-        String cypher = String.format("MATCH (n:`%s`) WHERE id(n) = $id DETACH DELETE n", label);
+        // 2. 执行删除 (匹配 name 属性)
+        // 注意：如果有同名歌曲（比如不同歌手），这里会把它们都删掉。
+        // 如果想更精确，可以加 artist 参数，但目前为了简便只用 name。
+        String cypher = String.format("MATCH (n:`%s`) WHERE n.name = $name DETACH DELETE n", label);
         
         neo4jClient.query(cypher)
-                .bind(songId).to("id")
+                .bind(songName).to("name")
                 .run();
                 
-        log.info("用户 {} 从图谱 {} 中删除了节点 {}", userId, graphId, songId);
+        log.info("用户 {} 从图谱 {} 中删除了歌曲: {}", userId, graphId, songName);
     }
 
     // ================= 动态属性管理 (高危区域) =================
