@@ -99,6 +99,12 @@ RETURN p
 2.主页面，歌曲播放页面
 用户图，指向自己可查询的数据库（自己创建和别人创建）
 创建新数据库的功能
+
+2026.2.28 14:43:
+POST /api/music/node/delete?graphId=858&id=1147 删除858图的id为1147的点，需要在Header里添加token：Authorization:xxx
+POST /api/music/newlisten?name=test3&graphId=858  添加新的歌曲test3到858图中，需要在Header里添加token：Authorization:xxx
+POST /api/music/listen?name=test3&graphId=858  添加新的歌曲test3到858图中，需要在Header里添加token：Authorization:xxx
+
 ```
 
 开发中：

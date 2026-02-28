@@ -46,14 +46,15 @@ public class MusicController {
     // POST /api/music/listen?name=夜曲&artist=周杰伦&isFullPlay=true
     @PostMapping("/listen")
     public Song listen(@RequestAttribute("currentUserId") Long userId,
-                         @RequestParam String name,
-                         @RequestParam(required = false, defaultValue = "Unknown") String artist,
-                         @RequestParam(defaultValue = "false") boolean forceNew,
-                         @RequestParam(defaultValue = "false") boolean isRandom,
-                         @RequestParam(defaultValue = "true") boolean isFullPlay,
-                         @RequestParam(defaultValue = "false") boolean isSkip) {
-        log.info("用户 {} 正在听 {}", userId, name);
-        return musicService.addSong(name, artist, forceNew, isRandom, isFullPlay, isSkip);
+                       @RequestParam Long graphId, // 【新增】必传
+                       @RequestParam String name,
+                       @RequestParam(required = false, defaultValue = "Unknown") String artist,
+                       @RequestParam(defaultValue = "false") boolean isRandom,
+                       @RequestParam(defaultValue = "true") boolean isFullPlay,
+                       @RequestParam(defaultValue = "false") boolean isSkip) {
+        log.info("用户 {} 在图谱 {} 听歌: {}", userId, graphId, name);
+        // forceNew 默认为 false
+        return musicService.addSong(userId, graphId, name, artist, false, isRandom, isFullPlay, isSkip);
     }
 
     @GetMapping("/recommend")
@@ -133,6 +134,17 @@ public class MusicController {
         musicService.deleteConnection(firstName, nextName);
         return "尝试删除连接: " + firstName + " -> " + nextName;
     }
+    /**
+     * 删除指定节点（点）
+     * DELETE /api/music/node/delete?graphId=10&id=25
+     */
+    @RequestMapping("/node/delete")
+    public String deleteNode(@RequestAttribute("currentUserId") Long userId,
+                             @RequestParam Long graphId,
+                             @RequestParam Long id) {
+        musicService.deleteNode(userId, graphId, id);
+        return "成功删除节点 ID: " + id;
+    }
 
     /**
      * 【升级版】独立听歌（不连接上一首）
@@ -142,21 +154,16 @@ public class MusicController {
      * 请求示例：POST /api/music/newlisten?name=夜曲&artist=周杰伦&isFullPlay=true
      */
     @PostMapping("/newlisten")
-    public Song newListen(@RequestParam String name,
+    public Song newListen(@RequestAttribute("currentUserId") Long userId,
+                          @RequestParam Long graphId, // 【新增】必传
+                          @RequestParam String name,
                           @RequestParam(required = false, defaultValue = "Unknown") String artist,
                           @RequestParam(defaultValue = "false") boolean isRandom,
                           @RequestParam(defaultValue = "true") boolean isFullPlay,
                           @RequestParam(defaultValue = "false") boolean isSkip) {
-        
-        // 核心改动：调用 V2 版本服务，并将 forceNewChain 硬编码为 true
-        return musicService.addSong(
-                name, 
-                artist, 
-                true, // forceNewChain = true (关键点：强制断连)
-                isRandom, 
-                isFullPlay, 
-                isSkip
-        );
+        log.info("用户 {} 在图谱 {} 新开听歌: {}", userId, graphId, name);
+        // forceNew = true
+        return musicService.addSong(userId, graphId, name, artist, true, isRandom, isFullPlay, isSkip);
     }
     
     /**
@@ -181,9 +188,9 @@ public class MusicController {
      * 返回示例：[{"id": "10", "name": "七里香"}, {"id": "8", "name": "夜曲"}]
      */
     @GetMapping("/listenhistory")
-    public List<Map<String, String>> getListenHistory() {
-        // 调用我们新写的结构化方法
-        return historyService.getStructuredHistory();
+    public List<Map<String, String>> getListenHistory(@RequestParam Long graphId) {
+        // 历史记录也需要带 graphId
+        return historyService.getStructuredHistory(graphId);
     }
 
     /**

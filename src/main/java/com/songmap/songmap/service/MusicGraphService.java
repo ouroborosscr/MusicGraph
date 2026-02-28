@@ -2,7 +2,9 @@ package com.songmap.songmap.service;
 
 import com.songmap.songmap.dto.NeighborItemDTO;
 import com.songmap.songmap.dto.ScoredSongDTO;
+import com.songmap.songmap.entity.GraphInfo;
 import com.songmap.songmap.entity.Song;
+import com.songmap.songmap.repository.GraphInfoRepository;
 import com.songmap.songmap.repository.SongRepository;
 
 import lombok.extern.slf4j.Slf4j; // 【生产级】引入日志框架
@@ -15,6 +17,7 @@ import org.springframework.util.Assert; // Spring自带的断言工具，用于�
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -38,6 +41,7 @@ public class MusicGraphService {
 
     private final SongRepository songRepository;
     private final MusicHistoryService musicHistoryService;
+    private final GraphInfoRepository graphInfoRepository;
     private final Neo4jClient neo4jClient;
 
     // 2. 【可配置性】从配置文件读取限制，而不是写死
@@ -48,10 +52,13 @@ public class MusicGraphService {
     // 3. 【安全性】预编译正则，只允许字母、数字、下划线作为属性名，防止 Cypher 注入
     private static final Pattern SAFE_KEY_PATTERN = Pattern.compile("^[a-zA-Z0-9_]+$");
 
-    public MusicGraphService(SongRepository songRepository, 
-                             MusicHistoryService musicHistoryService, 
+    // 【修复】构造函数必须包含 graphInfoRepository，Spring 才能自动注入
+    public MusicGraphService(SongRepository songRepository,
+                             GraphInfoRepository graphInfoRepository,
+                             MusicHistoryService musicHistoryService,
                              Neo4jClient neo4jClient) {
         this.songRepository = songRepository;
+        this.graphInfoRepository = graphInfoRepository;
         this.musicHistoryService = musicHistoryService;
         this.neo4jClient = neo4jClient;
     }
@@ -65,83 +72,99 @@ public class MusicGraphService {
      * @param isFullPlay 是否完播
      * @param isSkip 是否跳过
      */
+    /**
+     * 【核心升级】支持指定图谱的听歌逻辑
+     */
     @Transactional
-    public Song addSong(String name, String artist, boolean forceNewChain, 
+    public Song addSong(Long userId, Long graphId, String name, String artist, boolean forceNewChain, 
                           boolean isRandom, boolean isFullPlay, boolean isSkip) {
-        // 1. 处理参数默认值
+        // 1. 校验并获取图谱专属 Label
         if (artist == null || artist.isEmpty()) artist = "Unknown";
         
-        // 2. 获取上一首歌
-        Long lastSongId = musicHistoryService.getLastListenedSongId();
-
-        // 3. 查找或创建当前歌曲
-        Optional<Song> existingSongOpt = songRepository.findByNameAndArtist(name, artist);
-        Song currentSong;
-
-        if (existingSongOpt.isPresent()) {
-            // === 分支 A: 歌曲已存在 -> 执行 UPDATE ===
-            currentSong = existingSongOpt.get();
-            
-            // 在内存中更新对象属性（为了最后返回给 Controller）
-            currentSong.setListenedAt(LocalDateTime.now());
-            currentSong.setListenCount(nullSafeAdd(currentSong.getListenCount(), 1));
-            if (isFullPlay) currentSong.setFullPlayCount(nullSafeAdd(currentSong.getFullPlayCount(), 1));
-            if (isSkip) currentSong.setSkipCount(nullSafeAdd(currentSong.getSkipCount(), 1));
-            
-            if (isRandom) {
-                currentSong.setRandomSelectCount(nullSafeAdd(currentSong.getRandomSelectCount(), 1));
-            } else {
-                currentSong.setUserSelectCount(nullSafeAdd(currentSong.getUserSelectCount(), 1));
-            }
-
-            // 【关键修复】使用自定义 Cypher 只更新属性，绝不使用 save()，保护现有关系不被删除
-            songRepository.updateSongStats(
-                currentSong.getId(),
-                currentSong.getListenedAt(),
-                currentSong.getListenCount(),
-                currentSong.getFullPlayCount(),
-                currentSong.getSkipCount(),
-                currentSong.getUserSelectCount(),
-                currentSong.getRandomSelectCount()
-            );
-
-        } else {
-            // === 分支 B: 新歌 -> 执行 SAVE ===
-            currentSong = new Song(name, artist);
-            // 构造函数已经初始化了大部分计数器为 0 或 1，这里根据参数微调
-            if (isFullPlay) currentSong.setFullPlayCount(1);
-            if (isSkip) currentSong.setSkipCount(1);
-            if (isRandom) {
-                currentSong.setRandomSelectCount(1);
-                currentSong.setUserSelectCount(0); // 构造函数默认是1，如果是随机需重置
-            }
-            
-            // 新节点没有任何关系，使用 save() 是安全的
-            currentSong = songRepository.save(currentSong);
-        }
-
-        // 5. 【更新边属性】 (如果是新的一天 forceNewChain=true，则跳过此步，从而实现断连)
-        if (lastSongId != null && !forceNewChain) {
-            // 防自环逻辑
-            if (!currentSong.getId().equals(lastSongId)) {
-                int jumpVal = 1;
-                int selectVal = isRandom ? 0 : 1;
-                int randomVal = isRandom ? 1 : 0;
-
-                // 使用 MERGE 语句，它是增量的，不会删除其他边
-                songRepository.createOrUpdateEdge(lastSongId, currentSong.getId(), jumpVal, selectVal, randomVal);
-            }
-        }
-
-        // 6. 更新 Redis 历史
-        musicHistoryService.updateHistory(currentSong.getId(), currentSong.getName(), historyLimit);
+        GraphInfo graph = graphInfoRepository.findByIdAndUserId(graphId, userId)
+                .orElseThrow(() -> new IllegalArgumentException("Graph not found or access denied"));
         
-        return currentSong;
-    }
+        String label = graph.getNodeLabel(); // 例如 "G_u10_xxx"
 
-    // 辅助防空指针加法
-    private int nullSafeAdd(Integer a, int b) {
-        return (a == null ? 0 : a) + b;
+        // 2. 获取该图谱的上一首
+        Long lastSongId = musicHistoryService.getLastListenedSongId(graphId);
+
+        // 3. 使用动态 Cypher 查找或创建节点
+        // 我们同时打上 :Song 和 动态Label
+        String mergeNodeCypher = String.format(
+            "MERGE (n:Song:`%s` {name: $name, artist: $artist}) " +
+            "ON CREATE SET " +
+            "   n.listenCount = 1, " +
+            "   n.listenedAt = datetime(), " +
+            "   n.fullPlayCount = $fullPlayInc, " +
+            "   n.skipCount = $skipInc, " +
+            "   n.userSelectCount = $userSelectInc, " +
+            "   n.randomSelectCount = $randomSelectInc " +
+            "ON MATCH SET " +
+            "   n.listenCount = coalesce(n.listenCount, 0) + 1, " +
+            "   n.listenedAt = datetime(), " +
+            "   n.fullPlayCount = coalesce(n.fullPlayCount, 0) + $fullPlayInc, " +
+            "   n.skipCount = coalesce(n.skipCount, 0) + $skipInc, " +
+            "   n.userSelectCount = coalesce(n.userSelectCount, 0) + $userSelectInc, " +
+            "   n.randomSelectCount = coalesce(n.randomSelectCount, 0) + $randomSelectInc " +
+            "RETURN n", 
+            label
+        );
+
+        // 准备参数
+        Map<String, Object> params = new HashMap<>();
+        params.put("name", name);
+        params.put("artist", artist);
+        params.put("fullPlayInc", isFullPlay ? 1 : 0);
+        params.put("skipInc", isSkip ? 1 : 0);
+        params.put("userSelectInc", isRandom ? 0 : 1);
+        params.put("randomSelectInc", isRandom ? 1 : 0);
+
+        Song currentSong = neo4jClient.query(mergeNodeCypher)
+                .bindAll(params)
+                .fetchAs(Song.class)
+                .mappedBy((typeSystem, record) -> {
+                    // 手动映射一下 ID 和 Name，或者直接让 SDN 映射
+                    // 这里为了保险，只要 ID 和关键属性
+                    Song s = new Song();
+                    s.setId(record.get(0).asNode().id());
+                    s.setName(record.get(0).asNode().get("name").asString());
+                    return s;
+                })
+                .one()
+                .orElseThrow(() -> new RuntimeException("Failed to create/update node"));
+
+        // 4. 处理连线 (仅当上一首存在且不强制断连，且不是自环时)
+        if (lastSongId != null && !forceNewChain && !currentSong.getId().equals(lastSongId)) {
+            // 注意：这里我们不需要再查一次 lastSong，直接用 ID 连线即可
+            // 但为了安全，最好确保 lastSong 也在这个图谱里（通过 Label 约束）
+            String edgeCypher = String.format(
+                "MATCH (prev:`%s`), (curr:`%s`) " +
+                "WHERE id(prev) = $lastId AND id(curr) = $currId " +
+                "MERGE (prev)-[r:NEXT]->(curr) " +
+                "ON CREATE SET " +
+                "   r.jumpCount = 1, " +
+                "   r.userSelectCount = $userSelectInc, " +
+                "   r.randomSelectCount = $randomSelectInc " +
+                "ON MATCH SET " +
+                "   r.jumpCount = coalesce(r.jumpCount, 0) + 1, " +
+                "   r.userSelectCount = coalesce(r.userSelectCount, 0) + $userSelectInc, " +
+                "   r.randomSelectCount = coalesce(r.randomSelectCount, 0) + $randomSelectInc",
+                label, label
+            );
+            
+            neo4jClient.query(edgeCypher)
+                .bind(lastSongId).to("lastId")
+                .bind(currentSong.getId()).to("currId")
+                .bind(isRandom ? 0 : 1).to("userSelectInc")
+                .bind(isRandom ? 1 : 0).to("randomSelectInc")
+                .run();
+        }
+
+        // 5. 更新 Redis 历史 (带 graphId)
+        musicHistoryService.updateHistory(graphId, currentSong.getId(), currentSong.getName(), historyLimit);
+
+        return currentSong;
     }
 
     // /**
@@ -213,6 +236,33 @@ public class MusicGraphService {
         
         songRepository.deleteRelationship(fromName, toName);
         log.info("Deleted relationship between [{}] and [{}]", fromName, toName);
+    }
+
+    /**
+     * 【新增】删除指定节点及其关联关系
+     * @param userId 当前用户ID
+     * @param graphId 图谱ID
+     * @param songId 歌曲节点ID
+     */
+    @Transactional
+    public void deleteNode(Long userId, Long graphId, Long songId) {
+        Assert.notNull(songId, "Song ID must not be null");
+
+        // 1. 校验图谱权限
+        GraphInfo graph = graphInfoRepository.findByIdAndUserId(graphId, userId)
+                .orElseThrow(() -> new IllegalArgumentException("Graph not found or access denied"));
+        
+        String label = graph.getNodeLabel();
+
+        // 2. 执行删除 (DETACH DELETE 会同时删除该点连接的所有边)
+        // 增加 label 约束，防止误删其他图谱中 ID 恰好相同的点（虽然 ID 全局唯一，但为了安全）
+        String cypher = String.format("MATCH (n:`%s`) WHERE id(n) = $id DETACH DELETE n", label);
+        
+        neo4jClient.query(cypher)
+                .bind(songId).to("id")
+                .run();
+                
+        log.info("用户 {} 从图谱 {} 中删除了节点 {}", userId, graphId, songId);
     }
 
     // ================= 动态属性管理 (高危区域) =================

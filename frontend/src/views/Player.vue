@@ -1,430 +1,438 @@
 <template>
-  <div class="player-container" ref="containerRef">
-    <div class="player-header">
-      <div class="left">
-        <n-button circle secondary @click="goBack">
-          <template #icon><n-icon><ArrowBack /></n-icon></template>
-        </n-button>
-        <div class="info">
-          <h2>{{ graphName }}</h2>
-          <span class="status">包含 {{ nodeCount }} 首歌曲</span>
+  <div class="page-container">
+    <div class="left-panel">
+      
+      <div class="control-box">
+        <div class="box-header" @click="toggleCollapse('manual')">
+          <span class="title">手动修改图</span>
+          <span class="toggle-icon">{{ collapsed.manual ? '+' : '-' }}</span>
+        </div>
+        
+        <div v-show="!collapsed.manual" class="box-content">
+          <div class="module-tabs">
+            <div 
+              class="tab-item" 
+              :class="{ active: activeModule === 'listen' }"
+              @click="activeModule = 'listen'"
+            >
+              添加听歌记录
+            </div>
+            <div 
+              class="tab-item" 
+              :class="{ active: activeModule === 'newListen' }"
+              @click="activeModule = 'newListen'"
+            >
+              添加新的记录
+            </div>
+            <div 
+              class="tab-item" 
+              :class="{ active: activeModule === 'delete' }"
+              @click="activeModule = 'delete'"
+            >
+              删除歌曲关联
+            </div>
+          </div>
+
+          <div class="module-body">
+            <div v-if="activeModule === 'listen'" class="form-group">
+              <input v-model="forms.listenName" type="text" placeholder="请输入歌曲名称 (如: 稻香)" class="custom-input" />
+              <div class="btn-row">
+                <button class="btn btn-secondary" @click="forms.listenName = ''">清空</button>
+                <button class="btn btn-primary" @click="handleAddListen">确定</button>
+              </div>
+            </div>
+
+            <div v-if="activeModule === 'newListen'" class="form-group">
+              <input v-model="forms.newListenName" type="text" placeholder="请输入歌曲名称" class="custom-input" />
+              <div class="btn-row">
+                <button class="btn btn-secondary" @click="forms.newListenName = ''">清空</button>
+                <button class="btn btn-primary" @click="handleAddNewListen">确定</button>
+              </div>
+            </div>
+
+            <div v-if="activeModule === 'delete'" class="form-group">
+              <input v-model="forms.delFirstName" type="text" placeholder="歌曲 1" class="custom-input mb-2" />
+              <input v-model="forms.delNextName" type="text" placeholder="歌曲 2" class="custom-input" />
+              <div class="btn-row">
+                <button class="btn btn-secondary" @click="clearDeleteForm">清空</button>
+                <button class="btn btn-primary" @click="handleDeleteRelation">确定</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="right">
-        <n-button type="primary" size="small" round>
-          <template #icon><n-icon><Play /></n-icon></template>
-          随机播放
-        </n-button>
+
+      <div class="control-box">
+        <div class="box-header" @click="toggleCollapse('config')">
+          <span class="title">配置</span>
+          <span class="toggle-icon">{{ collapsed.config ? '+' : '-' }}</span>
+        </div>
+        <div v-show="!collapsed.config" class="box-content placeholder-content">
+          <p>配置项预留位置...</p>
+        </div>
       </div>
+
+      <div class="player-body-placeholder">
+        <div class="placeholder-text">音乐播放器本体区域</div>
+      </div>
+
     </div>
 
-    <div 
-      class="chart-out-box" 
-      ref="boxRef"
-      :style="boxStyle"
-    >
-      <div class="chart-wrapper" ref="chartRef"></div>
-
-      <div class="zoom-controls">
-        <n-button-group vertical>
-          <n-button secondary circle @click="handleZoom(1.2)">
-            <template #icon><n-icon><Add /></n-icon></template>
-          </n-button>
-          <n-button secondary circle @click="handleZoom(0.8)">
-            <template #icon><n-icon><Remove /></n-icon></template>
-          </n-button>
-        </n-button-group>
-      </div>
-
-      <div class="resize-handle right" @mousedown.prevent="startResize($event, 'width')"></div>
-      <div class="resize-handle bottom" @mousedown.prevent="startResize($event, 'height')"></div>
-      <div class="resize-handle corner" @mousedown.prevent="startResize($event, 'both')">
-        <n-icon size="16" color="#aaa"><ResizeOutline /></n-icon>
-      </div>
-    </div>
-    
-    <div v-if="loading" class="loading-mask">
-      <n-spin size="large" description="正在加载星图..." />
+    <div class="right-panel">
+      <div ref="chartRef" class="chart-container"></div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, nextTick, watch, computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { NButton, NButtonGroup, NIcon, NSpin, useMessage, useThemeVars } from 'naive-ui'
-import { ArrowBack, Play, Add, Remove, ResizeOutline } from '@vicons/ionicons5' // 引入 Resize 图标
-import * as echarts from 'echarts'
+import { ref, reactive, onMounted, onUnmounted, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import request from '../api/request'
+import * as echarts from 'echarts'
 
+// --- 状态管理 ---
 const route = useRoute()
-const router = useRouter()
-const message = useMessage()
-const themeVars = useThemeVars()
-
-const graphId = route.params.id
 const chartRef = ref<HTMLElement | null>(null)
-const boxRef = ref<HTMLElement | null>(null)      // 【新增】引用外层盒子
-const containerRef = ref<HTMLElement | null>(null)// 【新增】引用最外层容器
-const loading = ref(true)
-const graphName = ref('加载中...')
-const nodeCount = ref(0)
-const currentZoom = ref(0.3)
-
 let myChart: echarts.ECharts | null = null
-let resizeObserver: ResizeObserver | null = null
 
-// ================== 拖拽缩放逻辑开始 ==================
+// 左侧面板状态
+const collapsed = reactive({
+  manual: false,
+  config: true
+})
+const activeModule = ref('listen') // 'listen' | 'newListen' | 'delete'
 
-// 记录盒子尺寸状态
-const boxState = reactive({
-  isResizing: false,
-  width: 0,  // 0 表示自动(flex: 1)
-  height: 0,
-  startX: 0,
-  startY: 0,
-  startWidth: 0,
-  startHeight: 0,
-  resizeMode: '' as 'width' | 'height' | 'both'
+const forms = reactive({
+  listenName: '',
+  newListenName: '',
+  delFirstName: '',
+  delNextName: ''
 })
 
-// 计算动态样式
-const boxStyle = computed(() => {
-  const style: any = {}
-  // 如果正在调整或已经调整过，则使用固定尺寸
-  if (boxState.width > 0) style.width = `${boxState.width}px`
-  if (boxState.height > 0) style.height = `${boxState.height}px`
-  
-  // 如果设置了尺寸，取消 flex: 1，改为 flex: none 以便生效
-  if (boxState.width > 0 || boxState.height > 0) {
-    style.flex = 'none'
-  }
-  return style
-})
+// --- 交互逻辑 ---
 
-const startResize = (e: MouseEvent, mode: 'width' | 'height' | 'both') => {
-  if (!boxRef.value) return
-
-  boxState.isResizing = true
-  boxState.resizeMode = mode
-  boxState.startX = e.clientX
-  boxState.startY = e.clientY
-
-  // 获取当前实际尺寸作为起始值
-  const rect = boxRef.value.getBoundingClientRect()
-  boxState.startWidth = rect.width
-  boxState.startHeight = rect.height
-  
-  // 如果是第一次拖动，初始化当前尺寸，防止跳变
-  if (boxState.width === 0) boxState.width = rect.width
-  if (boxState.height === 0) boxState.height = rect.height
-
-  // 添加全局事件监听
-  document.addEventListener('mousemove', onMouseMove)
-  document.addEventListener('mouseup', onMouseUp)
-  document.body.style.userSelect = 'none' // 防止拖动时选中文字
-  document.body.style.cursor = mode === 'both' ? 'nwse-resize' : (mode === 'width' ? 'ew-resize' : 'ns-resize')
+const toggleCollapse = (key: 'manual' | 'config') => {
+  collapsed[key as keyof typeof collapsed] = !collapsed[key as keyof typeof collapsed]
 }
 
-const onMouseMove = (e: MouseEvent) => {
-  if (!boxState.isResizing) return
-
-  const dx = e.clientX - boxState.startX
-  const dy = e.clientY - boxState.startY
-
-  // 限制最小尺寸
-  const minSize = 200
-
-  if (boxState.resizeMode === 'width' || boxState.resizeMode === 'both') {
-    boxState.width = Math.max(minSize, boxState.startWidth + dx)
-  }
-  if (boxState.resizeMode === 'height' || boxState.resizeMode === 'both') {
-    boxState.height = Math.max(minSize, boxState.startHeight + dy)
-  }
-}
-
-const onMouseUp = () => {
-  boxState.isResizing = false
-  document.removeEventListener('mousemove', onMouseMove)
-  document.removeEventListener('mouseup', onMouseUp)
-  document.body.style.userSelect = ''
-  document.body.style.cursor = ''
-  
-  // 触发一次图表重绘（虽然 ResizeObserver 会处理，但手动触发更稳妥）
-  myChart?.resize()
-}
-
-// ================== 拖拽缩放逻辑结束 ==================
-
-const goBack = () => {
-  router.push('/')
-}
-
-const themeBlue = '#66ccff'
-
-const handleZoom = (ratio: number) => {
-  if (!myChart) return
-  currentZoom.value *= ratio
-  if (currentZoom.value < 0.1) currentZoom.value = 0.1
-  if (currentZoom.value > 10) currentZoom.value = 10
-  myChart.setOption({ series: [{ zoom: currentZoom.value }] })
-}
-
-const initChart = (nodes: any[], links: any[]) => {
-  if (!chartRef.value) return
-  if (chartRef.value.clientWidth === 0 || chartRef.value.clientHeight === 0) return
-
-  if (myChart) myChart.dispose()
-
-  myChart = echarts.init(chartRef.value)
-  
-  const tooltipBg = themeVars.value.cardColor
-  const borderColor = themeVars.value.borderColor
-  const textColor = themeVars.value.textColorBase
-
-  const option = {
-    backgroundColor: 'transparent',
-    title: { show: false },
-    tooltip: {
-      trigger: 'item',
-      backgroundColor: tooltipBg,
-      borderColor: borderColor,
-      textStyle: { color: textColor },
-      formatter: (params: any) => {
-        if (params.dataType === 'node') {
-          return `<b>${params.data.name}</b><br/>歌手: ${params.data.artist}`
-        }
-        return `${params.data.source} -> ${params.data.target}<br/>权重: ${params.data.value}`
-      }
-    },
-    series: [
-      {
-        type: 'graph',
-        layout: 'force',
-        layoutAnimation: true,
-        zoom: currentZoom.value,
-        label: { show: true, position: 'right', color: themeBlue, fontSize: 12 },
-        data: nodes.map(n => ({
-          id: n.id,
-          name: n.name,
-          symbolSize: n.symbolSize,
-          value: n.artist,
-          artist: n.artist,
-          x: n.x, y: n.y,
-          itemStyle: { color: themeBlue, borderColor: '#4dabf7', borderWidth: 1, shadowBlur: 10, shadowColor: 'rgba(102, 204, 255, 0.5)' }
-        })),
-        links: links.map(l => ({
-          source: l.source, target: l.target, value: l.value,
-          lineStyle: { width: Math.min(l.value, 5), curveness: 0.2, color: themeBlue, opacity: 0.3 }
-        })),
-        roam: true,
-        edgeSymbol: ['none', 'arrow'],
-        edgeSymbolSize: [4, 10],
-        force: { repulsion: 400, edgeLength: [50, 200], gravity: 0.1 }
-      }
-    ]
-  }
-
-  myChart.setOption(option)
-  
-  myChart.on('click', (params) => {
-    if (params.dataType === 'node') message.info(`选中歌曲: ${params.data.name}`)
-  })
-  myChart.on('graphRoam', (params: any) => {
-    if (params.zoom) currentZoom.value *= params.zoom
-  })
-}
-
-watch(() => themeVars.value, (newVars) => {
-  if (myChart) {
-    myChart.setOption({
-      tooltip: { backgroundColor: newVars.cardColor, borderColor: newVars.borderColor, textStyle: { color: newVars.textColorBase } }
-    })
-  }
-}, { deep: true })
-
-let cachedNodes: any[] = []
-let cachedLinks: any[] = []
-
-const fetchData = async () => {
-  loading.value = true
+// 1. 添加听歌记录
+const handleAddListen = async () => {
+  if (!forms.listenName.trim()) return alert('请输入歌曲名称')
   try {
+    await request.post('/music/listen', null, {
+      params: { name: forms.listenName }
+    })
+    alert('添加听歌记录成功')
+    refreshGraph()
+  } catch (error) {
+    console.error(error)
+    alert('操作失败')
+  }
+}
+
+// 2. 添加新的记录
+const handleAddNewListen = async () => {
+  if (!forms.newListenName.trim()) return alert('请输入歌曲名称')
+  try {
+    await request.post('/music/newlisten', null, {
+      params: { name: forms.newListenName }
+    })
+    alert('添加新记录成功')
+    refreshGraph()
+  } catch (error) {
+    console.error(error)
+    alert('操作失败')
+  }
+}
+
+// 3. 删除歌曲关联
+const clearDeleteForm = () => {
+  forms.delFirstName = ''
+  forms.delNextName = ''
+}
+
+const handleDeleteRelation = async () => {
+  if (!forms.delFirstName.trim() || !forms.delNextName.trim()) {
+    return alert('请输入两首歌曲的名称')
+  }
+  try {
+    await request.post('/music/delete', null, {
+      params: {
+        firstname: forms.delFirstName,
+        nextname: forms.delNextName
+      }
+    })
+    alert('删除关联成功')
+    refreshGraph()
+  } catch (error) {
+    console.error(error)
+    alert('操作失败')
+  }
+}
+
+// --- 图谱逻辑 ---
+
+const initChart = () => {
+  // 【修复】Vue中使用 .value 获取 DOM 元素
+  if (chartRef.value && !myChart) {
+    myChart = echarts.init(chartRef.value)
+  }
+}
+
+const refreshGraph = () => {
+  loadData()
+}
+
+const loadData = async () => {
+  // 确保 DOM 已经渲染
+  await nextTick()
+  if (!myChart) initChart()
+  
+  const graphId = route.params.id || 'default' 
+  
+  try {
+    myChart?.showLoading()
     const res = await request.get(`/graph/data/${graphId}`)
     const { nodes, links } = res.data
-    nodeCount.value = nodes.length
-    graphName.value = `图谱 #${graphId}`
-    cachedNodes = nodes.map((n: any) => ({ ...n, x: Math.random() * 800, y: Math.random() * 600 }))
-    cachedLinks = links
-    await nextTick()
-    initChart(cachedNodes, cachedLinks)
-  } catch (err) {
-    message.error('无法加载图谱数据')
-  } finally {
-    loading.value = false
+    
+    const option = {
+      title: { text: '音乐知识图谱', left: 'center' },
+      tooltip: {},
+      series: [
+        {
+          type: 'graph',
+          layout: 'force',
+          zoom: 0.5,
+          data: nodes.map((n: any) => ({
+            ...n,
+            symbolSize: n.symbolSize || 30,
+            label: { show: true }
+          })),
+          links: links,
+          roam: true,
+          label: {
+            position: 'right',
+            formatter: '{b}'
+          },
+          force: {
+            repulsion: 300,
+            edgeLength: 100
+          }
+        }
+      ]
+    }
+    myChart?.hideLoading()
+    myChart?.setOption(option)
+  } catch (error) {
+    console.error('加载图谱失败', error)
+    myChart?.hideLoading()
   }
 }
 
 const handleResize = () => {
-  if (myChart) myChart.resize()
-  else if (cachedNodes.length > 0) initChart(cachedNodes, cachedLinks)
+  myChart?.resize()
 }
 
-onMounted(async () => {
-  // 【新增】初始化盒子大小和位置
-  if (containerRef.value) {
-    const cw = containerRef.value.clientWidth
-    const ch = containerRef.value.clientHeight
-    
-    // 设置为屏幕宽度的 65%，高度减去头部和一些边距
-    boxState.width = Math.max(300, Math.floor(cw * 0.5))
-    boxState.height = Math.max(800, Math.floor(ch - 100))
-  }
-
-  if (chartRef.value) {
-    resizeObserver = new ResizeObserver(() => handleResize())
-    resizeObserver.observe(chartRef.value)
-  }
-  await fetchData()
+onMounted(() => {
+  // 页面挂载后初始化图表
+  initChart()
+  loadData()
+  window.addEventListener('resize', handleResize)
 })
 
 onUnmounted(() => {
-  if (resizeObserver) resizeObserver.disconnect()
+  window.removeEventListener('resize', handleResize)
   myChart?.dispose()
-  document.removeEventListener('mousemove', onMouseMove)
-  document.removeEventListener('mouseup', onMouseUp)
 })
 </script>
 
 <style scoped>
-.player-container {
-  flex: 1;
-  width: 100%;
+/* 整体布局：左右各半 */
+.page-container {
   display: flex;
-  flex-direction: column;
-  position: relative;
-  background-color: var(--n-body-color);
-  overflow: hidden; /* 防止拖动过大撑开滚动条 */
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: #f5f7fa;
 }
 
-.player-header {
-  height: 60px;
-  padding: 0 20px;
+.left-panel {
+  width: 50%;
+  height: 100%;
+  padding: 20px;
+  border-right: 1px solid #e0e0e0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+  background-color: #fff;
+  box-sizing: border-box; /* 确保 padding 不会撑破布局 */
+}
+
+.right-panel {
+  width: 50%;
+  height: 100%;
+  position: relative;
+  /* 确保右侧面板有背景色，避免视觉上看起来像“没了” */
+  background-color: #ffffff; 
+}
+
+.chart-container {
+  width: 100%;
+  height: 100%;
+  min-height: 400px; /* 给一个最小高度兜底 */
+}
+
+/* 控制框样式 */
+.control-box {
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+  background-color: #fff;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  transition: all 0.3s;
+  flex-shrink: 0; /* 防止被压缩 */
+}
+
+.box-header {
+  padding: 15px 20px;
+  background-color: #f8f9fa;
+  cursor: pointer;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background-color: var(--n-card-color);
-  border-bottom: 1px solid var(--n-border-color);
-  z-index: 10;
-  flex: none; /* 头部不参与 flex 伸缩 */
+  border-bottom: 1px solid #ebeef5;
+  user-select: none;
 }
 
-.left { display: flex; align-items: center; gap: 15px; }
-.info h2 { margin: 0; font-size: 1.1rem; color: var(--n-text-color); }
-.info .status { font-size: 0.8rem; color: var(--n-text-color-3); }
+.box-header:hover {
+  background-color: #f0f2f5;
+}
 
-/* 容器样式调整 */
-.chart-out-box {
-  /* 默认 flex: 1，当 JS 设置 width/height 后这里会被覆盖为 flex: none */
-  flex: 1; 
-  padding: 10px;
+.box-header .title {
+  font-weight: bold;
+  font-size: 16px;
+  color: #303133;
+}
+
+.box-header .toggle-icon {
+  font-size: 18px;
+  font-weight: bold;
+  color: #909399;
+}
+
+.box-content {
+  padding: 20px;
+}
+
+/* 模块 Tab 样式 */
+.module-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.tab-item {
+  padding: 8px 16px;
+  background-color: #f0f2f5;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #606266;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+
+.tab-item:hover {
+  color: #409eff;
+}
+
+.tab-item.active {
+  background-color: #ecf5ff;
+  color: #409eff;
+  border-color: #b3d8ff;
+  font-weight: 500;
+}
+
+/* 表单样式 */
+.form-group {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  position: relative; 
-  
-  /* 【修改】靠右对齐：上 右 下 左。左边 auto 会把元素推向右边 */
-  margin: 20px 20px 20px auto;
-  
-  border: 2px dashed v-bind('themeVars.borderColor');
-  border-radius: 12px;
-  background-color: v-bind('themeVars.tableColor');
-  box-sizing: border-box; /* 关键：包含 padding 和 border */
-  min-width: 300px;
-  min-height: 300px;
-  transition: border-color 0.3s;
+  gap: 15px;
 }
 
-/* 激活状态的边框高亮 */
-.chart-out-box:hover {
-  border-color: var(--n-primary-color);
-}
-
-.chart-wrapper {
-  flex: 1;
+.custom-input {
   width: 100%;
-  /* 移除最小高度限制，完全跟随父容器 */
-  height: 100%; 
-  overflow: hidden;
-  border: 2px solid v-bind('themeVars.borderColor'); 
-  border-radius: 16px;
-  background-color: v-bind('themeVars.cardColor');
+  padding: 10px 12px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  outline: none;
+  font-size: 14px;
+  transition: border-color 0.2s;
   box-sizing: border-box;
 }
 
-.zoom-controls {
-  position: absolute;
-  bottom: 40px;
-  right: 40px;
-  z-index: 90; /* 略低于 resize handle */
-  background-color: var(--n-card-color);
+.custom-input:focus {
+  border-color: #409eff;
+}
+
+.mb-2 {
+  margin-bottom: 10px;
+}
+
+.btn-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.btn {
+  padding: 8px 20px;
   border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  font-size: 14px;
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.2s;
 }
 
-.loading-mask {
-  position: absolute;
-  top: 60px;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background-color: var(--n-color-modal);
-  z-index: 20;
-  backdrop-filter: blur(2px);
+.btn:hover {
+  opacity: 0.85;
 }
 
-/* ================== 拖拽手柄样式 ================== */
-.resize-handle {
-  position: absolute;
-  z-index: 100;
-  transition: background-color 0.2s;
+.btn-secondary {
+  background-color: #f4f4f5;
+  color: #909399;
 }
 
-/* 右边框感应区 */
-.resize-handle.right {
-  top: 0;
-  right: -5px; /* 向外延伸一点方便抓取 */
-  bottom: 20px; /* 留出角落 */
-  width: 15px;
-  cursor: ew-resize;
+.btn-primary {
+  background-color: #409eff;
+  color: white;
 }
 
-/* 下边框感应区 */
-.resize-handle.bottom {
-  bottom: -5px;
-  left: 0;
-  right: 20px;
-  height: 15px;
-  cursor: ns-resize;
+/* 占位符样式 */
+.placeholder-content {
+  color: #909399;
+  font-size: 14px;
+  text-align: center;
+  padding: 40px 0;
 }
 
-/* 右下角拖拽点 */
-.resize-handle.corner {
-  bottom: 0;
-  right: 0;
-  width: 30px;
-  height: 30px;
-  cursor: nwse-resize;
+.player-body-placeholder {
+  flex: 1; /* 占据剩余空间 */
+  min-height: 200px;
+  border: 2px dashed #e0e0e0;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--n-card-color); /* 给个背景色挡住线条 */
-  border-top-left-radius: 8px;
-  border: 1px solid var(--n-border-color);
+  background-color: #fafafa;
+  margin-bottom: 20px; /* 底部留白 */
 }
-.resize-handle.corner:hover {
-  background: var(--n-action-color);
+
+.placeholder-text {
+  color: #c0c4cc;
+  font-size: 18px;
+  font-weight: bold;
 }
 </style>

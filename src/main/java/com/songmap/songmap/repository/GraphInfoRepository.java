@@ -10,11 +10,13 @@ import java.util.List;
 
 public interface GraphInfoRepository extends Neo4jRepository<GraphInfo, Long> {
 
-    // 查询某个用户拥有的所有图谱
-    @Query("MATCH (u:User)-[:OWNS]->(g:GraphInfo) WHERE id(u) = $userId RETURN g ORDER BY g.updatedAt DESC")
-    List<GraphInfo> findAllByUserId(@Param("userId") Long userId);
+    // 【修复】通过 User -> OWNS -> GraphInfo 关系来查找列表
+    @Query("MATCH (u:User)-[:OWNS]->(g:GraphInfo) WHERE id(u) = $userId RETURN g")
+    List<GraphInfo> findAllByUserId(Long userId);
 
-    // 【新增】校验并查找（确保该图谱属于该用户）
-    @Query("MATCH (u:User)-[:OWNS]->(g:GraphInfo) WHERE id(u) = $userId AND id(g) = $graphId RETURN g")
-    Optional<GraphInfo> findByIdAndUserId(@Param("graphId") Long graphId, @Param("userId") Long userId);
+    // 【修复】通过 User -> OWNS -> GraphInfo 关系来校验单个图谱归属权
+    @Query("MATCH (u:User)-[:OWNS]->(g:GraphInfo) " +
+           "WHERE id(u) = $userId AND id(g) = $id " +
+           "RETURN g")
+    Optional<GraphInfo> findByIdAndUserId(Long id, Long userId);
 }
