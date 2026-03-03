@@ -2,7 +2,7 @@ import axios from 'axios'
 
 // 创建axios实例
 const service = axios.create({
-  baseURL: 'https://scrnocode.top:62012/api', // 使用正确的后端地址
+  baseURL: 'https://scrnocode.top:62061/api', // 使用正确的后端地址
   timeout: 5000
 })
 

@@ -203,7 +203,6 @@ const playSong = async (song: any) => {
 
     if (!playUrl) {
       alert(`无法播放《${song.songname}》，可能是VIP歌曲或Cookie失效`)
-      // 如果是自动播放下一首失败，尝试递归跳过（慎用，防止死循环）
       return
     }
 
@@ -224,12 +223,12 @@ const playSong = async (song: any) => {
       }
     })
     
-    // 关键：保存后端返回的 ID，用于下次推荐
+    // 关键：保存后端返回的 ID，用于下次推荐和高亮
     if (listenRes.data && listenRes.data.id) {
       player.currentNodeId = listenRes.data.id
     }
 
-    // D. 刷新图谱
+    // D. 刷新图谱 (此时会高亮 player.currentNodeId 对应的新节点)
     refreshGraph()
 
   } catch (error) {
@@ -261,11 +260,10 @@ const playNext = async () => {
     }
 
     // B. 取分数最高的推荐歌曲
-    const topRec = recommendations[0].song // 拿到 {id, name, artist}
+    const topRec = recommendations[0].song 
     console.log('推荐歌曲:', topRec.name, '推荐理由:', recommendations[0].reason)
 
-    // C. [桥接] 因为 Neo4j 没存 songmid，我们需要用名字搜一下来获取播放源
-    // 注意：这里可能会搜到同名不同版的歌，暂且取第一个
+    // C. [桥接] 搜名字取第一个播放
     const searchRes = await request.get('/music/search', { 
       params: { key: topRec.name + ' ' + topRec.artist } 
     })
@@ -273,13 +271,9 @@ const playNext = async () => {
     const list = searchRes.data?.data?.song?.list || searchRes.data?.data?.list || []
     
     if (list.length > 0) {
-      // 找到了！播放它
-      // 提示用户正在切歌
-      // alert(`为您推荐：${topRec.name}`) // 可选，体验更好可以做成 Toast
       playSong(list[0])
     } else {
       console.warn('推荐了歌曲但在曲库没搜到:', topRec.name)
-      // 容错：如果搜不到，尝试推荐列表的下一个（这里简单处理，直接提示）
       alert(`推荐歌曲《${topRec.name}》暂时无法播放`)
     }
 
@@ -306,8 +300,7 @@ const onTimeUpdate = () => {
 
 const onEnded = () => {
   player.isPlaying = false
-  // 自动播放下一首
-  playNext()
+  playNext() // 自动下一首
 }
 
 const onAudioError = () => {
@@ -341,7 +334,7 @@ const handleUpdateCookie = async () => {
     alert('Cookie 配置成功')
   } catch (e:any) { alert('配置失败: ' + (e.response?.data || e.message)) }
 }
-const handleAddListen = async () => { /* 调用通用接口 */
+const handleAddListen = async () => {
   const graphId = route.params.id;
   await request.post('/music/listen', null, { params: { name: forms.listenName, graphId } })
   refreshGraph()
@@ -366,11 +359,43 @@ const handleDeleteNode = async () => {
 const initChart = () => {
   if (chartRef.value && !myChart) {
     myChart = echarts.init(chartRef.value)
-    myChart.on('click', (params: any) => {
-      if (params.dataType === 'node') forms.delNodeName = params.data.name
+    
+    // 【核心修改】点击节点：搜索 -> 播放 -> 更新节点状态
+    myChart.on('click', async (params: any) => {
+      if (params.dataType === 'node') {
+        const node = params.data
+        // 1. 填充删除框 (保留功能)
+        forms.delNodeName = node.name
+        
+        // 2. 搜索并播放 (解决 mismatch)
+        console.log(`点击图谱节点: ${node.name}, 尝试搜索播放...`)
+        const keyword = (node.artist && node.artist !== 'Unknown') 
+          ? `${node.name} ${node.artist}` 
+          : node.name
+          
+        try {
+          // 搜索
+          const res = await request.get('/music/search', { params: { key: keyword } })
+          const list = res.data?.data?.song?.list || res.data?.data?.list || []
+          
+          if (list.length > 0) {
+            // 播放第一个结果
+            // playSong 内部会调用 /listen，这会将“播放的这个音乐”作为最新的历史记录
+            // 从而实现“将播放的这个音乐作为当前节点”
+            playSong(list[0])
+          } else {
+            console.warn(`未找到歌曲 [${node.name}] 的播放资源`)
+            // 可选：弹窗提示
+            // alert(`未找到 [${node.name}] 的播放资源`)
+          }
+        } catch (e) {
+          console.error('节点点击搜索失败', e)
+        }
+      }
     })
   }
 }
+
 const refreshGraph = () => loadData()
 const loadData = async () => {
   await nextTick()
@@ -384,6 +409,8 @@ const loadData = async () => {
     ])
     const { nodes, links } = graphRes.data
     const historyList = historyRes.data || []
+    
+    // 获取最新的一首 (高亮目标)
     const lastSongId = historyList.length > 0 ? String(historyList[0].id) : null
 
     const option = {
