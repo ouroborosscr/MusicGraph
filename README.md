@@ -3,6 +3,10 @@
 > **基于知识图谱的个性化音乐轨迹记录与推荐系统**
 > *A Knowledge Graph-based Personalized Music Trajectory System*
 
+## Demo Video
+
+https://github.com/ouroborosscr/MusicGraph/blob/main/Demo_video/meeting_01.mp4
+
 ## 📖 项目简介
 
 **MusicGraph** 是一个探索性的音乐数据系统。不同于传统的基于标签（Tag-based）或协同过滤的推荐系统，MusicGraph 关注用户的**实际听歌轨迹**。
