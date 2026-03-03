@@ -5,7 +5,11 @@
 
 ## Demo Video
 
-https://github.com/ouroborosscr/MusicGraph/blob/main/Demo_video/meeting_01.mp4
+
+
+https://github.com/user-attachments/assets/15098828-b703-439c-be41-f98923d870bb
+
+
 
 ## 📖 项目简介
 
